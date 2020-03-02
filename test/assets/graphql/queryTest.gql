@@ -1,0 +1,14 @@
+query getUser(
+    $address: String! = "hi"
+    $orderBy: [UsersOrderBy!]
+) {
+  user: allUsers(condition: { ethereumAddress: $address }, orderBy: $orderBy) {
+    nodes {
+      email
+      id
+      settings: userNotificationSettingByUserId {
+        emailGiftReceiver
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+mutation createUser(
+    $: String! = "hi"
+    $orderBy: [UsersOrderBy!]
+) {
+  user: createUser(condition: { ethereumAddress: $address }, orderBy: $orderBy) {
+    nodes {
+      email
+      id
+      settings: userNotificationSettingByUserId {
+        emailGiftReceiver
+      }
+    }
+  }
+}

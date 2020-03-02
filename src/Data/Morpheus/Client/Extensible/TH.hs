@@ -12,6 +12,9 @@
 
 module Data.Morpheus.Client.Extensible.TH where
 
+import           Data.Either                    ( lefts
+                                                , rights
+                                                )
 import           Language.Haskell.TH
 import           Data.Morpheus.Types.Internal.AST
 import           Data.Morpheus.Parsing.Document.TypeSystem
@@ -31,23 +34,35 @@ import           Data.List                      ( nub
                                                 , find
                                                 )
 
+operationTypeToSchemaTypeName :: OperationType -> Text
+operationTypeToSchemaTypeName = \case
+  Query        -> "Query"
+  Subscription -> "Subscription"
+  Mutation     -> "Mutation"
+
 buildTypes :: String -> [String] -> Q [Dec]
 buildTypes schemaFilePath queryFilePaths = do
   schemaText <- runIO $ T.readFile schemaFilePath
-  queryTexts  <- runIO $ mapM T.readFile queryFilePaths
-  concat <$> mapM (buildTypesForQuery schemaText) queryTexts
- where 
-  buildTypesForQuery schemaText queryText = do
-    let gqlQuery = case parseGQL (GQLRequest queryText Nothing Nothing) of
+  queryTexts <- runIO $ mapM T.readFile queryFilePaths
+  let gqlQueries = flip map queryTexts $ \queryText ->
+        case parseGQL (GQLRequest queryText Nothing Nothing) of
           Failure errs    -> error $ show errs
           Success res _ _ -> res
-        schemaTypeDefs = case parseSchema schemaText of
-          Failure errs    -> error $ show errs
-          Success res _ _ -> res
-    argTypeDecs        <- sequence [buildArgTypeDecs schemaTypeDefs gqlQuery]
-    standaloneTypeDecs <- buildTypesDecs schemaTypeDefs gqlQuery
-    returnTypeDecs     <- buildReturnTypeDec schemaTypeDefs gqlQuery
-    pure (argTypeDecs <> standaloneTypeDecs <> [returnTypeDecs])
+      schemaTypeDefs = case parseSchema schemaText of
+        Failure errs    -> error $ show errs
+        Success res _ _ -> res
+  
+  standaloneTypeDecs <- case mapM (buildTypesDecs schemaTypeDefs) gqlQueries of
+    Left err -> error $ T.unpack err
+    Right decs -> concat . nub <$> sequence decs
+  (<>) standaloneTypeDecs
+    .   concat
+    <$> mapM (buildTypesForQuery schemaTypeDefs) gqlQueries
+ where
+  buildTypesForQuery schemaTypeDefs gqlQuery = do
+    argTypeDecs    <- sequence [buildArgTypeDecs schemaTypeDefs gqlQuery]
+    returnTypeDecs <- buildReturnTypeDec schemaTypeDefs gqlQuery
+    pure (argTypeDecs <> [returnTypeDecs])
 
 promotedTypeList :: [Q Type] -> Q Type
 promotedTypeList []       = promotedNilT
@@ -65,60 +80,72 @@ lookUpPrimitiveType = \case
   "Boolean" -> Just $ conT ''Bool
   _         -> Nothing
 
-buildTypesDecs :: SchemaTypeDefs -> GQLQuery -> Q [Dec]
-buildTypesDecs sc gq =
+buildTypesDecs :: SchemaTypeDefs -> GQLQuery -> Either Text (Q [Dec])
+buildTypesDecs sc gq = do
   let
+    optype = operationType . operation $ gq
     argTypes =
       map (typeConName . variableType . snd) (operationArguments $ operation gq)
     argTypesNoPrims = flip filter argTypes $ \t ->
       case lookUpPrimitiveType t of
         Nothing -> True
         _       -> False
-    selectionTypes =
-      map typeConName $ getSelectionTypes sc (operationSelection $ operation gq)
+  selectionTypes <- map typeConName
+    <$> getSelectionTypes sc optype (operationSelection $ operation gq)
+  let
     allTypeNames         = nub (argTypesNoPrims <> selectionTypes)
     allTypeDefs          = mapMaybe (lookUpTypeDefInSchema sc) allTypeNames
     allTypeDefsNoScalars = flip filter allTypeDefs $ \td ->
       case typeContent td of
         DataScalar _ -> False
         _            -> True
-  in
-    toTHDefinitions False allTypeDefsNoScalars >>= declareTypes False
+  pure (toTHDefinitions False allTypeDefsNoScalars >>= declareTypes False)
 
 getSelectionTypes
-  :: SchemaTypeDefs -> SelectionSet (stage :: Stage) -> [TypeRef]
-getSelectionTypes sc set =
-  let mqueryFieldDefs = getFieldDefinitionsFromType sc "Query"
+  :: SchemaTypeDefs
+  -> OperationType
+  -> SelectionSet (stage :: Stage)
+  -> Either Text [TypeRef]
+getSelectionTypes sc optype set =
+  let optypeText      = operationTypeToSchemaTypeName optype
+      mqueryFieldDefs = getFieldDefinitionsFromType sc optypeText
   in  case mqueryFieldDefs of
-        Nothing -> error "no query TypeDefinition found"
+        Nothing ->
+          error $ "no " <> T.unpack optypeText <> " TypeDefinition found"
         Just queryFieldDefs ->
           getSelectionTypesFromSelectionSet queryFieldDefs set
  where
   getSelectionTypesFromSelectionSet
-    :: [FieldDefinition] -> SelectionSet (stage :: Stage) -> [TypeRef]
-  getSelectionTypesFromSelectionSet fieldDefs =
-    concatMap (getSelectionTypesFromSelection fieldDefs)
+    :: [FieldDefinition]
+    -> SelectionSet (stage :: Stage)
+    -> Either Text [TypeRef]
+  getSelectionTypesFromSelectionSet fieldDefs selset =
+    let eSelTypes = map (getSelectionTypesFromSelection fieldDefs) selset
+        rs        = concat $ rights eSelTypes
+        ls        = lefts eSelTypes
+    in  case ls of
+          [] -> Right rs
+          _  -> Left $ T.intercalate "\n" ls
   getSelectionTypesFromSelection
-    :: [FieldDefinition] -> (Text, Selection (stage :: Stage)) -> [TypeRef]
+    :: [FieldDefinition]
+    -> (Text, Selection (stage :: Stage))
+    -> Either Text [TypeRef]
   getSelectionTypesFromSelection fieldDefs (name, sel) =
     case selectionContent sel of
-      SelectionField -> maybe
-        (error ("no TypeRef found for type: " <> T.unpack name))
-        (: [])
-        (getSelectionFieldTypeRef fieldDefs name)
-      UnionSelection _ -> error "UnionSelection not supported"
+      SelectionField -> maybe (Left ("no TypeRef found for type: " <> name))
+                              (Right . (: []))
+                              (getSelectionFieldTypeRef fieldDefs name)
+      UnionSelection _ -> Left "UnionSelection not supported"
       SelectionSet selSet ->
         case find (\fd -> fieldName fd == name) fieldDefs of
-          Nothing -> error ("no field def found " <> T.unpack name)
+          Nothing -> Left ("no field def found " <> name)
           Just fd ->
-            let
-              fieldTypeName = typeConName $ fieldType fd
-              nextFieldDefs = fromMaybe
-                (error ("no FieldDefs found for type" <> T.unpack fieldTypeName)
-                )
-                (getFieldDefinitionsFromType sc fieldTypeName)
-            in
-              getSelectionTypesFromSelectionSet nextFieldDefs selSet
+            let fieldTypeName = typeConName $ fieldType fd
+            in  case getFieldDefinitionsFromType sc fieldTypeName of
+                  Nothing ->
+                    Left $ "no FieldDefs found for type" <> fieldTypeName
+                  Just nextFieldDefs ->
+                    getSelectionTypesFromSelectionSet nextFieldDefs selSet
 
 getSelectionFieldTypeRef :: [FieldDefinition] -> Text -> Maybe TypeRef
 getSelectionFieldTypeRef fds name =
@@ -186,17 +213,25 @@ buildArgTypeDecs stds gqlq =
 buildReturnTypeDec :: SchemaTypeDefs -> GQLQuery -> DecQ
 buildReturnTypeDec stds gqlq =
   let selections = operationSelection $ operation gqlq
+      optype     = operationType . operation $ gqlq
       queryName  = case operationName $ operation gqlq of
         Nothing   -> error "Unnamed Queries not permitted"
         Just name -> mkName $ mkUpperWord $ T.unpack (name <> "Response")
-      responseRecords = map (buildReturnType stds) selections
+      responseRecords = map (buildReturnType optype stds) selections
       records         = mkRecord responseRecords
   in  tySynD queryName [] records
 
-buildReturnType :: SchemaTypeDefs -> (Text, Selection (stage :: Stage)) -> TypeQ
-buildReturnType stds sel = case getFieldDefinitionsFromType stds "Query" of
-  Nothing        -> error "No Query Field found in schema"
-  Just fieldDefs -> recLookUp fieldDefs sel
+buildReturnType
+  :: OperationType
+  -> SchemaTypeDefs
+  -> (Text, Selection (stage :: Stage))
+  -> TypeQ
+buildReturnType optype stds sel =
+  let optypeText = operationTypeToSchemaTypeName optype
+  in  case getFieldDefinitionsFromType stds optypeText of
+        Nothing ->
+          error $ "No " <> T.unpack optypeText <> " Field found in schema"
+        Just fieldDefs -> recLookUp fieldDefs sel
  where
   recLookUp fieldDefs (name, sel') =
     let name'   = fromMaybe name (selectionAlias sel')

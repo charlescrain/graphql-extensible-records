@@ -1,2 +1,4 @@
+import qualified Data.Morpheus.Client.ExtensibleSpec as Extensible
+
 main :: IO ()
-main = putStrLn "Test suite not yet implemented"
+main = Extensible.spec
