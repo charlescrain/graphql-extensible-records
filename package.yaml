@@ -27,6 +27,8 @@ dependencies:
   - morpheus-graphql >= 0.10.1
   - template-haskell
   - text
+  - aeson
+  - graphql-parser
 
 library:
   source-dirs: src

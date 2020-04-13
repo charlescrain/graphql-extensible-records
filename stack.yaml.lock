@@ -32,6 +32,20 @@ packages:
   original:
     git: https://github.com/charlescrain/morpheus-graphql
     commit: 901e39653878f8bcea096b7b6d0f149f478cf564
+- completed:
+    cabal-file:
+      size: 3352
+      sha256: 9aa0e7957e8bb9d27fea6c714fc6cbe19f795d41605ae1fd12f59843d3d85f56
+    name: graphql-parser
+    version: 0.1.0.0
+    git: https://github.com/Pixura/graphql-parser-hs
+    pantry-tree:
+      size: 1944
+      sha256: 024bbdb7ec49da63a55ab372f1c6f6c3d9f3254b3fd7671c9a518f5f786891d9
+    commit: 553c8a19df775fdf7da038361b430e6e6b9653d1
+  original:
+    git: https://github.com/Pixura/graphql-parser-hs
+    commit: 553c8a19df775fdf7da038361b430e6e6b9653d1
 snapshots:
 - completed:
     size: 524163

@@ -16,22 +16,36 @@ import           Data.Either                    ( lefts
                                                 , rights
                                                 )
 import           Language.Haskell.TH
-import           Data.Morpheus.Types.Internal.AST
-import           Data.Morpheus.Parsing.Document.TypeSystem
-import           Data.Morpheus.Types.Internal.Resolving.Core
-import           Data.Morpheus.Document
-import           Data.Morpheus.Types.IO  hiding ( operationName )
+import           Language.GraphQL.Draft.Parser
+
+-- import           Data.Morpheus.Parsing.Document.TypeSystem
+-- import           Data.Morpheus.Types.Internal.Resolving.Core
+-- import           Data.Morpheus.Document
+-- import           Data.Morpheus.Types.IO  hiding ( operationName )
+-- import           Data.Morpheus.Parsing.Request.Parser
+
 import           Data.Char                      ( toUpper )
-import           Data.Maybe                     ( fromMaybe
+import           Data.Maybe                     ( catMaybes
+                                                , fromMaybe
                                                 , mapMaybe
                                                 )
-import           Data.Morpheus.Parsing.Request.Parser
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as T
 import           Data.Extensible                ( Record )
 import           Data.List                      ( nub
                                                 , find
+                                                )
+import           Language.GraphQL.Draft.Syntax  (unVariable,  SchemaDocument(..)
+                                                , ExecutableDefinition(..)
+                                                , TypedOperationDefinition(..)
+                                                , OperationDefinition(..)
+                                                , ExecutableDocument(..)
+                                                , getExecutableDefinitions
+                                                , Name(..)
+                                                , VariableDefinition(..)
+                                                , GType(..)
+                                                , Nullability(..)
                                                 )
 
 operationTypeToSchemaTypeName :: OperationType -> Text
@@ -44,25 +58,102 @@ buildTypes :: String -> [String] -> Q [Dec]
 buildTypes schemaFilePath queryFilePaths = do
   schemaText <- runIO $ T.readFile schemaFilePath
   queryTexts <- runIO $ mapM T.readFile queryFilePaths
-  let gqlQueries = flip map queryTexts $ \queryText ->
-        case parseGQL (GQLRequest queryText Nothing Nothing) of
-          Failure errs    -> error $ show errs
-          Success res _ _ -> res
-      schemaTypeDefs = case parseSchema schemaText of
-        Failure errs    -> error $ show errs
-        Success res _ _ -> res
-  
-  standaloneTypeDecs <- case mapM (buildTypesDecs schemaTypeDefs) gqlQueries of
-    Left err -> error $ T.unpack err
+  let execDocs = flip map queryTexts $ \queryText ->
+        case parseExecutableDoc queryText of
+          Left  errs -> error $ show errs
+          Right res  -> res
+      schemaDoc = case parseSchemaDoc schemaText of
+        Left  errs -> error $ show errs
+        Right res  -> res
+
+  standaloneTypeDecs <- case mapM (buildEnumDecs schemaDoc) execDocs of
+    Left  err  -> error $ T.unpack err
     Right decs -> concat . nub <$> sequence decs
-  (<>) standaloneTypeDecs
-    .   concat
-    <$> mapM (buildTypesForQuery schemaTypeDefs) gqlQueries
+
+
+  queryTypes <- sequence $ concat $ rights $ sequence $ mapM
+    (buildTypesForQuery schemaDoc)
+    execDocs
+
+  pure $ standaloneTypeDecs <> queryTypes
  where
-  buildTypesForQuery schemaTypeDefs gqlQuery = do
-    argTypeDecs    <- sequence [buildArgTypeDecs schemaTypeDefs gqlQuery]
-    returnTypeDecs <- buildReturnTypeDec schemaTypeDefs gqlQuery
+  buildTypesForQuery schemaDoc execDoc@(ExecutableDocument eds) = do
+    let typedOps = catMaybes $ flip map eds $ \case
+          ExecutableDefinitionOperation (OperationDefinitionTyped tod) ->
+            Just tod
+          _ -> Nothing
+    argTypeDecs    <- mapM (buildArgTypeDecs' schemaDoc) typedOps
+    returnTypeDecs <- buildReturnTypeDec' schemaDoc execDoc
     pure (argTypeDecs <> [returnTypeDecs])
+
+buildEnumDecs :: SchemaDocument -> ExecutableDocument -> Either Text (Q [Dec])
+buildEnumDecs = undefined
+
+buildArgTypeDecs'
+  :: SchemaDocument -> TypedOperationDefinition -> Either Text DecQ
+buildArgTypeDecs' sd tod = case _todName tod of
+  Nothing -> Left "buildArgTypeDecs: Unnamed Queries not permitted"
+  Just (Name n) ->
+    let queryName = mkName $ mkUpperWord $ T.unpack (n <> "Args")
+        varDefs = _todVariableDefinitions tod
+        records = mkRecord $ buildArgRecords' sd varDefs
+    in  tySynD queryName [] records
+
+
+
+buildArgRecords' :: SchemaDocument -> [VariableDefinition] -> Either Text [TypeQ]
+buildArgRecords' sd varDefs = sequence . map buildArgType
+ where
+  buildArgType vdef =
+    let name       = unName $ unVariable $ _vdVariable vdef
+        isOptional = case _vdDefaultValue vdef of
+          Nothing -> False
+          Just _  -> True
+    in  let wrapMaybe = if isOptional then appT (conT ''Maybe) else id
+            wrapNull = case _vdType vdef of
+                TypeNamed (Nullability True) _ -> appT (conT ''Nullable) 
+                TypeList (Nullability True) _ -> appT (conT ''Nullable) 
+                _ -> id
+            wrapList = if isList' variableType then appT listT else id
+            type' =
+                fromMaybe (error $ "Type not found in schema: " <> T.unpack name)
+                  $ lookUpTypeInSchema schema name
+            recordName = litT (strTyLit $ T.unpack argName)
+            recordType = wrapMaybe $ wrapNull $ wrapList type'
+        in  uInfixT recordName (mkName ">:") recordType
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+buildReturnTypeDec' :: SchemaDocument -> ExecutableDocument -> Either Text DecQ
+buildReturnTypeDec' = undefined
 
 promotedTypeList :: [Q Type] -> Q Type
 promotedTypeList []       = promotedNilT
@@ -79,6 +170,7 @@ lookUpPrimitiveType = \case
   "Int"     -> Just $ conT ''Int
   "Boolean" -> Just $ conT ''Bool
   _         -> Nothing
+
 
 buildTypesDecs :: SchemaTypeDefs -> GQLQuery -> Either Text (Q [Dec])
 buildTypesDecs sc gq = do
