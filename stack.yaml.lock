@@ -41,11 +41,11 @@ packages:
     git: https://github.com/Pixura/graphql-parser-hs
     pantry-tree:
       size: 1944
-      sha256: 024bbdb7ec49da63a55ab372f1c6f6c3d9f3254b3fd7671c9a518f5f786891d9
-    commit: 553c8a19df775fdf7da038361b430e6e6b9653d1
+      sha256: 619c5c8fe7ece589c3d7ce1531941a50bf146161b9e24285b630e464a8970607
+    commit: b4f512e909ed6fa32a68e92e159bfa5ee4118f61
   original:
     git: https://github.com/Pixura/graphql-parser-hs
-    commit: 553c8a19df775fdf7da038361b430e6e6b9653d1
+    commit: b4f512e909ed6fa32a68e92e159bfa5ee4118f61
 snapshots:
 - completed:
     size: 524163
