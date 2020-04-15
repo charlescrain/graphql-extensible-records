@@ -43,8 +43,6 @@ packages:
 extra-deps:
   - extensible-0.7.1
   - membership-0
-  - git: https://github.com/charlescrain/morpheus-graphql
-    commit: 901e39653878f8bcea096b7b6d0f149f478cf564
   - git: https://github.com/Pixura/graphql-parser-hs
     commit: b4f512e909ed6fa32a68e92e159bfa5ee4118f61
 # Override default flag values for local packages and extra-deps

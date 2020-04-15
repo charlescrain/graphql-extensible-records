@@ -20,20 +20,6 @@ packages:
     hackage: membership-0
 - completed:
     cabal-file:
-      size: 24374
-      sha256: 5bac7ed1a74675bb6e2a19ea8d9c14ae1e1f590bfdfb23813307aefd46d25623
-    name: morpheus-graphql
-    version: 0.10.1
-    git: https://github.com/charlescrain/morpheus-graphql
-    pantry-tree:
-      size: 39847
-      sha256: 5fbfeab6b1234076e5ec78a49c42f39caac52ba7e329ebd61cbdd0ae9572822a
-    commit: 901e39653878f8bcea096b7b6d0f149f478cf564
-  original:
-    git: https://github.com/charlescrain/morpheus-graphql
-    commit: 901e39653878f8bcea096b7b6d0f149f478cf564
-- completed:
-    cabal-file:
       size: 3352
       sha256: 9aa0e7957e8bb9d27fea6c714fc6cbe19f795d41605ae1fd12f59843d3d85f56
     name: graphql-parser
