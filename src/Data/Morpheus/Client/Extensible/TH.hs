@@ -114,17 +114,16 @@ buildEnumDecs sd (ExecutableDocument eds) = do
   selEnums  <- forM selSets (findEnumNameFromSelectionSet rootType)
   todEnums  <- forM tods (findEnumNameFromTypedOperationDefinition rootType)
   fragEnums <- forM frags findEnumNameFromFragmentDefinition
-  let enums = selEnums <> todEnums <> fragEnums
+  let enums = nub $ concat $ selEnums <> todEnums <> fragEnums
   mkEnumDefs enums
  where
   findEnumNameFromSelectionSet td =
     fmap concat . mapM (findEnumNamesFromSelection td)
-
   findEnumNamesFromSelection
     :: GQL.TypeDefinition -> GQL.Selection -> Either Text [GQL.Name]
   findEnumNamesFromSelection td = \case
-    GQL.SelectionField GQL.Field {..} -> do
-      td' <- case lookupFieldType td _fName of
+    GQL.SelectionField fd@GQL.Field {..} -> do
+      td' <- case lookupFieldType sd td fd of
         Nothing ->
           Left
             $  "findEnumNamesFromSelection: didn't find field `"
@@ -134,8 +133,8 @@ buildEnumDecs sd (ExecutableDocument eds) = do
         Just td' -> pure td'
       enums <- case td' of
         TypeDefinitionEnum etd -> pure [GQL._etdName etd]
-        _ -> pure []
-      nextEnums <- findEnumNameFromSelectionSet td' _fSelectionSet 
+        _                      -> pure []
+      nextEnums <- findEnumNameFromSelectionSet td' _fSelectionSet
       pure $ enums <> nextEnums
     GQL.SelectionFragmentSpread _ ->
       Left "findEnumNamesFromSelection: Fragment spreads not supported"
@@ -143,42 +142,87 @@ buildEnumDecs sd (ExecutableDocument eds) = do
       Left "findEnumNamesFromSelection: Inline fragments not supported"
 
   findEnumNameFromTypedOperationDefinition
-    :: GQL.TypeDefinition 
-    -> GQL.TypedOperationDefinition 
+    :: GQL.TypeDefinition
+    -> GQL.TypedOperationDefinition
     -> Either Text [GQL.Name]
   findEnumNameFromTypedOperationDefinition td tod = do
-    enums <- findEnumNameFromSelectionSet td (_todSelectionSet tod)
+    enums    <- findEnumNameFromSelectionSet td (_todSelectionSet tod)
     argEnums <- concat <$> mapM getVariableEnum (_todVariableDefinitions tod)
     pure $ enums <> argEnums
-  findEnumNameFromFragmentDefinition _ = 
-      Left "findEnumNameFromFragmentDefinition: Fragments not supported"
-  lookupFieldType 
-    :: GQL.TypeDefinition 
-    -> GQL.Name
-    -> Maybe GQL.TypeDefinition
-  lookupFieldType td n = case td of
-    TypeDefinitionObject _ -> undefined
-    TypeDefinitionInterface _ -> undefined
-    TypeDefinitionUnion _ -> undefined
-    TypeDefinitionInputObject _ -> undefined
-    _ -> Nothing
+  findEnumNameFromFragmentDefinition _ =
+    Left "findEnumNameFromFragmentDefinition: Fragments not supported"
 
   getVariableEnum VariableDefinition {..} = do
     let name = GQL.unNamedType (GQL.getBaseType _vdType)
     case lookUpTypeInSchema sd name of
-      Nothing -> Left $ "getVariableEnum: Type not found in schema `" <> GQL.unName name <> "`"
+      Nothing ->
+        Left
+          $  "getVariableEnum: Type not found in schema `"
+          <> GQL.unName name
+          <> "`"
       Just td -> enumLookup td
-    where
-      enumLookup :: GQL.TypeDefinition -> Either Text [GQL.Name]
-      enumLookup = \case
-        TypeDefinitionEnum etd -> Right [GQL._etdName etd]
-        TypeDefinitionInputObject td -> do
-          let tds = mapMaybe 
-                (lookUpTypeInSchema sd . GQL.unNamedType . GQL.getBaseType .  GQL._ivdType) (GQL._iotdValueDefinitions td)
-          concat <$> mapM enumLookup tds
-        _ -> pure []
-  mkEnumDefs                         = undefined
-    
+   where
+    enumLookup :: GQL.TypeDefinition -> Either Text [GQL.Name]
+    enumLookup = \case
+      TypeDefinitionEnum        etd -> Right [GQL._etdName etd]
+      TypeDefinitionInputObject td  -> do
+        let tds = mapMaybe
+              ( lookUpTypeInSchema sd
+              . GQL.unNamedType
+              . GQL.getBaseType
+              . GQL._ivdType
+              )
+              (GQL._iotdValueDefinitions td)
+        concat <$> mapM enumLookup tds
+      _ -> pure []
+  mkEnumDefs :: [GQL.Name] -> Either Text [DecQ]
+  mkEnumDefs = mapM $ \n -> case lookUpTypeInSchema sd n of
+    Just (TypeDefinitionEnum GQL.EnumTypeDefinition {..}) -> do
+      let constrs =
+            flip map _etdValueDefinitions $ \GQL.EnumValueDefinition {..} ->
+              normalC
+                (mkName . T.unpack . GQL.unName $ GQL.unEnumValue _evdName)
+                []
+      pure $ dataD (cxt [])
+                   (mkName . T.unpack . GQL.unName $ n)
+                   []
+                   Nothing
+                   constrs
+                   [derivClause Nothing [equalityT, conT ''Show]]
+    Just _ ->
+      Left $ "mkEnumDefs: Found non-enum type for name `" <> GQL.unName n <> "`"
+    Nothing ->
+      Left $ "mkEnumDefs: Type not found in schema `" <> GQL.unName n <> "`"
+
+
+
+lookupFieldType
+  :: [GQL.TypeSystemDefinition]
+  -> GQL.TypeDefinition
+  -> GQL.Field
+  -> Maybe GQL.TypeDefinition
+lookupFieldType tsds td GQL.Field {..} = case td of
+  TypeDefinitionObject GQL.ObjectTypeDefinition {..} -> do
+    GQL.FieldDefinition {..} <- lookupFieldDefinition _fName
+                                                      _otdFieldsDefinition
+    lookUpTypeInSchema tsds _fldName
+  TypeDefinitionInterface GQL.InterfaceTypeDefinition {..} -> do
+    GQL.FieldDefinition {..} <- lookupFieldDefinition _fName
+                                                      _itdFieldsDefinition
+    lookUpTypeInSchema tsds _fldName
+  TypeDefinitionUnion GQL.UnionTypeDefinition {..} -> do
+    GQL.NamedType n <- find ((==) _fName . GQL.unNamedType) _utdMemberTypes
+    lookUpTypeInSchema tsds n
+  TypeDefinitionInputObject GQL.InputObjectTypeDefinition {..} -> do
+    GQL.InputValueDefinition {..} <- find ((==) _fName . GQL._ivdName)
+                                          _iotdValueDefinitions
+    lookUpTypeInSchema tsds (GQL.unNamedType $ GQL.getBaseType _ivdType)
+  _ -> Nothing
+
+lookupFieldDefinition
+  :: GQL.Name -> [GQL.FieldDefinition] -> Maybe GQL.FieldDefinition
+lookupFieldDefinition n = find (\GQL.FieldDefinition {..} -> n == _fldName)
+
 
 getRootOperationName
   :: [TypeSystemDefinition] -> [ExecutableDefinition] -> Either Text GQL.Name
