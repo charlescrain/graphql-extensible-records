@@ -1,4 +1,4 @@
-import qualified Data.Morpheus.Client.ExtensibleSpec as Extensible
+import qualified Language.GraphQL.ExtensibleSpec as Extensible
 
 main :: IO ()
 main = Extensible.spec

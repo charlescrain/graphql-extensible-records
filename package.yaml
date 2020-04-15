@@ -1,6 +1,6 @@
-name: morpheus-graphql-extensible
+name: graphql-extensible-records
 version: 0.1.0.0
-github: "charlescrain/morpheus-graphql-extensible"
+github: "charlescrain/graphql-extensible-records"
 license: BSD3
 author: "Charles Crain"
 maintainer: "craincharles@gmail.com"
@@ -17,16 +17,17 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description: Please see the README on GitHub at <https://github.com/charlescrain/morpheus-graphql-extensible#readme>
+description: Please see the README on GitHub at <https://github.com/charlescrain/graphql-extensible-records#readme>
 
 ghc-options: -Wall -Werror
 
 dependencies:
   - base >= 4.7 && < 5
   - extensible >= 0.7.1
-  - morpheus-graphql >= 0.10.1
   - template-haskell
   - text
+  - aeson
+  - graphql-parser
 
 library:
   source-dirs: src
@@ -70,7 +71,7 @@ library:
     - TemplateHaskell
 
 tests:
-  morpheus-graphql-extensible-test:
+  graphql-extensible-records-test:
     main: Spec.hs
     source-dirs: test
     ghc-options:
@@ -116,6 +117,6 @@ tests:
       - TypeOperators
       - TemplateHaskell
     dependencies:
-      - morpheus-graphql-extensible
+      - graphql-extensible-records
       - aeson
       - text

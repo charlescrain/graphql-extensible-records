@@ -1,0 +1,24 @@
+query Films($firstFilms: Int! = 10, $firstStarships: Int! = 5) {
+  allFilms(first: $firstFilms) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    edges {
+      node {
+        title
+        openingCrawl
+        releaseDate
+        starshipConnection(first: $firstStarships) {
+          edges {
+            node {
+              name
+              model
+              starshipClass
+            }
+          }
+        }
+      }
+    }
+  }
+}

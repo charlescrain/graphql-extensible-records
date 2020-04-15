@@ -1,4 +1,4 @@
-module Data.Morpheus.Client.Extensible.TestSchemaScalarTypes where
+module Language.GraphQL.Extensible.TestSchemaScalarTypes where
 
 import Data.Aeson (Value)
 import Data.Text (Text)
