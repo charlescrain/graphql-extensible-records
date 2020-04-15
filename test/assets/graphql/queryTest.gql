@@ -7,12 +7,8 @@ query getUser(
       email
       id
       settings: userNotificationSettingByUserId {
-        ...settingsField
+        emailGiftReceiver
       }
     }
   }
-}
-
-fragment settingsField on UserNotificationSetting {
-  emailGiftReceiver
 }
