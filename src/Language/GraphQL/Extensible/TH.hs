@@ -12,6 +12,7 @@ import           Data.Maybe                     ( listToMaybe
                                                 , catMaybes
                                                 , mapMaybe
                                                 )
+import qualified Data.Aeson as A
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as T
@@ -26,6 +27,15 @@ import           Control.Monad                  ( void
                                                 )
 
 data Nullable a = Null | NonNull a
+  deriving (Eq, Show)
+
+instance A.ToJSON a => A.ToJSON (Nullable a) where
+  toJSON Null = A.toJSON ("null" :: Text)
+  toJSON (NonNull a) = A.toJSON a
+
+instance A.FromJSON a => A.FromJSON (Nullable a) where
+  parseJSON A.Null = pure Null
+  parseJSON v = NonNull <$> A.parseJSON v
 
 buildTypes :: String -> [String] -> Q [Dec]
 buildTypes schemaFilePath queryFilePaths = do
