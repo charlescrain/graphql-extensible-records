@@ -6,13 +6,14 @@ import           Control.Applicative            ( (<|>) )
 import           Language.Haskell.TH
 import           Language.GraphQL.Draft.Parser
 
-
+import           GHC.Generics
 import           Data.Char                      ( toUpper )
 import           Data.Maybe                     ( listToMaybe
                                                 , catMaybes
                                                 , mapMaybe
                                                 )
-import qualified Data.Aeson as A
+import           Data.Aeson                    (ToJSON, FromJSON)
+import qualified Data.Aeson                    as A
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as T
@@ -30,12 +31,12 @@ data Nullable a = Null | NonNull a
   deriving (Eq, Show)
 
 instance A.ToJSON a => A.ToJSON (Nullable a) where
-  toJSON Null = A.toJSON ("null" :: Text)
+  toJSON Null        = A.toJSON ("null" :: Text)
   toJSON (NonNull a) = A.toJSON a
 
 instance A.FromJSON a => A.FromJSON (Nullable a) where
   parseJSON A.Null = pure Null
-  parseJSON v = NonNull <$> A.parseJSON v
+  parseJSON v      = NonNull <$> A.parseJSON v
 
 buildTypes :: String -> [String] -> Q [Dec]
 buildTypes schemaFilePath queryFilePaths = do
@@ -149,24 +150,31 @@ buildEnumDecs sd (GQL.ExecutableDocument eds) = do
         concat <$> mapM enumLookup tds
       _ -> pure []
   mkEnumDefs :: [GQL.Name] -> Either Text [DecQ]
-  mkEnumDefs = mapM $ \n -> case lookUpTypeInSchema sd n of
-    Just (GQL.TypeDefinitionEnum GQL.EnumTypeDefinition {..}) -> do
-      let constrs =
-            flip map _etdValueDefinitions $ \GQL.EnumValueDefinition {..} ->
-              normalC
-                (mkName . T.unpack . GQL.unName $ GQL.unEnumValue _evdName)
-                []
-      pure $ dataD (cxt [])
-                   (mkName . T.unpack . GQL.unName $ n)
-                   []
-                   Nothing
-                   constrs
-                   [derivClause Nothing [conT ''Eq, conT ''Show]]
-    Just _ ->
-      Left $ "mkEnumDefs: Found non-enum type for name `" <> GQL.unName n <> "`"
-    Nothing ->
-      Left $ "mkEnumDefs: Type not found in schema `" <> GQL.unName n <> "`"
-
+  mkEnumDefs ns = do 
+    decs <- forM ns $ \n -> case lookUpTypeInSchema sd n of
+      Just (GQL.TypeDefinitionEnum GQL.EnumTypeDefinition {..}) -> do
+        let 
+          constrs =
+              flip map _etdValueDefinitions $ \GQL.EnumValueDefinition {..} ->
+                normalC
+                  (mkName . T.unpack . GQL.unName $ GQL.unEnumValue _evdName)
+                  []
+          typeName = mkName . T.unpack . GQL.unName $ n
+          dec = dataD
+                  (cxt [])
+                  typeName
+                  []
+                  Nothing
+                  constrs
+                  [derivClause Nothing [conT ''Eq, conT ''Show, conT ''Generic]]
+          mkInstance className = instanceD (cxt []) (appT (conT className) (conT typeName)) []
+        pure [dec, mkInstance ''ToJSON, mkInstance ''FromJSON]
+      Just _ ->
+        Left $ "mkEnumDefs: Found non-enum type for name `" <> GQL.unName n <> "`"
+      Nothing ->
+        Left $ "mkEnumDefs: Type not found in schema `" <> GQL.unName n <> "`"
+    pure $ concat decs
+   
 lookupFieldType
   :: [GQL.TypeSystemDefinition]
   -> GQL.TypeDefinition
@@ -174,7 +182,8 @@ lookupFieldType
   -> Maybe (GQL.TypeDefinition, GQL.GType)
 lookupFieldType tsds td GQL.Field {..} = case td of
   GQL.TypeDefinitionObject GQL.ObjectTypeDefinition {..} -> do
-    GQL.FieldDefinition {..} <- lookupFieldDefinition _fName _otdFieldsDefinition
+    GQL.FieldDefinition {..} <- lookupFieldDefinition _fName
+                                                      _otdFieldsDefinition
     t <- lookUpTypeInSchema tsds (GQL.unNamedType $ GQL.getBaseType _fldType)
     pure (t, _fldType)
   GQL.TypeDefinitionInterface GQL.InterfaceTypeDefinition {..} -> do
@@ -239,11 +248,11 @@ buildArgRecords sd = mapM buildArgType
           Just _  -> True
         wrapMaybe = if isOptional then appT (conT ''Maybe) else id
     typeQ <- case lookUpTypeInSchema sd typeName of
-        Nothing ->
-          Left
-            $  "buildArgRecords: Type not found in schema: "
-            <> GQL.unName typeName
-        Just _ -> Right $ mkTypeQFromName typeName
+      Nothing ->
+        Left
+          $  "buildArgRecords: Type not found in schema: "
+          <> GQL.unName typeName
+      Just _ -> Right $ mkTypeQFromName typeName
     let recordType = wrapMaybe $ wrap (GQL._vdType vdef) typeQ
     Right $ uInfixT recordName (mkName ">:") recordType
 
@@ -290,10 +299,14 @@ lookUpRootOperationTypeDefinition tds opt =
 
 lookUpTypeInSchema
   :: [GQL.TypeSystemDefinition] -> GQL.Name -> Maybe GQL.TypeDefinition
-lookUpTypeInSchema _ n@(GQL.Name "String" ) = pure $ GQL.TypeDefinitionScalar $ GQL.ScalarTypeDefinition Nothing n []
-lookUpTypeInSchema _ n@(GQL.Name "Float"  ) = pure $ GQL.TypeDefinitionScalar $ GQL.ScalarTypeDefinition Nothing n []
-lookUpTypeInSchema _ n@(GQL.Name "Int"    ) = pure $ GQL.TypeDefinitionScalar $ GQL.ScalarTypeDefinition Nothing n []
-lookUpTypeInSchema _ n@(GQL.Name "Boolean") = pure $ GQL.TypeDefinitionScalar $ GQL.ScalarTypeDefinition Nothing n []
+lookUpTypeInSchema _ n@(GQL.Name "String") =
+  pure $ GQL.TypeDefinitionScalar $ GQL.ScalarTypeDefinition Nothing n []
+lookUpTypeInSchema _ n@(GQL.Name "Float") =
+  pure $ GQL.TypeDefinitionScalar $ GQL.ScalarTypeDefinition Nothing n []
+lookUpTypeInSchema _ n@(GQL.Name "Int") =
+  pure $ GQL.TypeDefinitionScalar $ GQL.ScalarTypeDefinition Nothing n []
+lookUpTypeInSchema _ n@(GQL.Name "Boolean") =
+  pure $ GQL.TypeDefinitionScalar $ GQL.ScalarTypeDefinition Nothing n []
 lookUpTypeInSchema tds n = listToMaybe $ catMaybes $ flip map tds $ \case
   GQL.TypeSystemDefinitionSchema _ -> Nothing
   GQL.TypeSystemDefinitionType td ->
@@ -383,4 +396,4 @@ mkTypeQFromName = \case
   (GQL.Name "Float"  ) -> conT ''Float
   (GQL.Name "Int"    ) -> conT ''Int
   (GQL.Name "Boolean") -> conT ''Bool
-  n -> conT . mkName . T.unpack . GQL.unName $ n
+  n                    -> conT . mkName . T.unpack . GQL.unName $ n
