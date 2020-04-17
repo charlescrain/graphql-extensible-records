@@ -1,7 +1,10 @@
 module Language.GraphQL.Extensible
   ( buildTypes
   , module Data.Extensible
-  ) where
+  , makeRelativeToProject
+  )
+where
 
-import Data.Extensible 
-import Language.GraphQL.Extensible.TH (buildTypes)
+import           Data.Extensible
+import           Data.FileEmbed                 ( makeRelativeToProject )
+import           Language.GraphQL.Extensible.TH ( buildTypes )

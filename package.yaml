@@ -28,6 +28,7 @@ dependencies:
   - text
   - aeson
   - graphql-parser
+  - file-embed
 
 library:
   source-dirs: src
