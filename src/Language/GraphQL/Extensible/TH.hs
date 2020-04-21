@@ -16,7 +16,7 @@ import           Data.Maybe                     ( listToMaybe
 import           Data.Aeson                     ( ToJSON
                                                 , FromJSON
                                                 )
-import           System.Directory               ( getCurrentDirectory )
+import           System.Directory               ( makeAbsolute )
 import qualified Data.Aeson                    as A
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
@@ -44,8 +44,7 @@ instance A.FromJSON a => A.FromJSON (Nullable a) where
 
 buildTypes :: String -> [String] -> Q [Dec]
 buildTypes schemaFilePath queryFilePaths = do
-  cwd <- runIO getCurrentDirectory
-  let absolutePaths = map (cwd <>) (schemaFilePath : queryFilePaths)
+  absolutePaths <- mapM (runIO . makeAbsolute) (schemaFilePath : queryFilePaths)
   mapM_ addDependentFile absolutePaths
   schemaText <- runIO $ T.readFile schemaFilePath
   queryTexts <- runIO $ mapM T.readFile queryFilePaths
