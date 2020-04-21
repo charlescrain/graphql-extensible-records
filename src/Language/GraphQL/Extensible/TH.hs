@@ -4,6 +4,7 @@ module Language.GraphQL.Extensible.TH where
 import           Data.Either                    ( rights )
 import           Control.Applicative            ( (<|>) )
 import           Language.Haskell.TH
+import           Language.Haskell.TH.Syntax
 import           Language.GraphQL.Draft.Parser
 
 import           GHC.Generics
@@ -12,7 +13,10 @@ import           Data.Maybe                     ( listToMaybe
                                                 , catMaybes
                                                 , mapMaybe
                                                 )
-import           Data.Aeson                    (ToJSON, FromJSON)
+import           Data.Aeson                     ( ToJSON
+                                                , FromJSON
+                                                )
+import           System.Directory               ( getCurrentDirectory )
 import qualified Data.Aeson                    as A
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
@@ -40,6 +44,9 @@ instance A.FromJSON a => A.FromJSON (Nullable a) where
 
 buildTypes :: String -> [String] -> Q [Dec]
 buildTypes schemaFilePath queryFilePaths = do
+  cwd <- runIO getCurrentDirectory
+  let absolutePaths = map (cwd <>) (schemaFilePath : queryFilePaths)
+  mapM_ addDependentFile absolutePaths
   schemaText <- runIO $ T.readFile schemaFilePath
   queryTexts <- runIO $ mapM T.readFile queryFilePaths
   let execDocs = flip map queryTexts $ \queryText ->
@@ -150,31 +157,34 @@ buildEnumDecs sd (GQL.ExecutableDocument eds) = do
         concat <$> mapM enumLookup tds
       _ -> pure []
   mkEnumDefs :: [GQL.Name] -> Either Text [DecQ]
-  mkEnumDefs ns = do 
+  mkEnumDefs ns = do
     decs <- forM ns $ \n -> case lookUpTypeInSchema sd n of
       Just (GQL.TypeDefinitionEnum GQL.EnumTypeDefinition {..}) -> do
-        let 
-          constrs =
+        let constrs =
               flip map _etdValueDefinitions $ \GQL.EnumValueDefinition {..} ->
                 normalC
                   (mkName . T.unpack . GQL.unName $ GQL.unEnumValue _evdName)
                   []
-          typeName = mkName . T.unpack . GQL.unName $ n
-          dec = dataD
-                  (cxt [])
-                  typeName
-                  []
-                  Nothing
-                  constrs
-                  [derivClause Nothing [conT ''Eq, conT ''Show, conT ''Generic]]
-          mkInstance className = instanceD (cxt []) (appT (conT className) (conT typeName)) []
+            typeName = mkName . T.unpack . GQL.unName $ n
+            dec      = dataD
+              (cxt [])
+              typeName
+              []
+              Nothing
+              constrs
+              [derivClause Nothing [conT ''Eq, conT ''Show, conT ''Generic]]
+            mkInstance className =
+              instanceD (cxt []) (appT (conT className) (conT typeName)) []
         pure [dec, mkInstance ''ToJSON, mkInstance ''FromJSON]
       Just _ ->
-        Left $ "mkEnumDefs: Found non-enum type for name `" <> GQL.unName n <> "`"
+        Left
+          $  "mkEnumDefs: Found non-enum type for name `"
+          <> GQL.unName n
+          <> "`"
       Nothing ->
         Left $ "mkEnumDefs: Type not found in schema `" <> GQL.unName n <> "`"
     pure $ concat decs
-   
+
 lookupFieldType
   :: [GQL.TypeSystemDefinition]
   -> GQL.TypeDefinition
