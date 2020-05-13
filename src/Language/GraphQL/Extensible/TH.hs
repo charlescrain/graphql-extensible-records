@@ -1,17 +1,17 @@
 
 module Language.GraphQL.Extensible.TH where
 
-import           Data.Either                    ( rights )
 import           Control.Applicative            ( (<|>) )
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Syntax
 import           Language.GraphQL.Draft.Parser
-
+import           Data.Void                      ( Void )
 import           GHC.Generics
 import           Data.Char                      ( toUpper )
 import           Data.Maybe                     ( listToMaybe
                                                 , catMaybes
                                                 , mapMaybe
+                                                , fromMaybe
                                                 )
 import           Data.Aeson                     ( ToJSON
                                                 , FromJSON
@@ -30,6 +30,8 @@ import qualified Language.GraphQL.Draft.Syntax as GQL
 import           Control.Monad                  ( void
                                                 , forM
                                                 )
+import           Language.GraphQL.Extensible.Class
+
 
 data Nullable a = Null | NonNull a
   deriving (Eq, Show)
@@ -48,34 +50,28 @@ buildTypes schemaFilePath queryFilePaths = do
   mapM_ addDependentFile absolutePaths
   schemaText <- runIO $ T.readFile schemaFilePath
   queryTexts <- runIO $ mapM T.readFile queryFilePaths
-  let execDocs = flip map queryTexts $ \queryText ->
-        case parseExecutableDoc queryText of
+  let execDocs = flip map queryTexts $ \queryText' ->
+        case parseExecutableDoc queryText' of
           Left  errs -> error $ show errs
-          Right res  -> res
+          Right res  -> (queryText', res)
       typeSystemDef = case parseTypeSysDefinition schemaText of
         Left  errs -> error $ show errs
         Right res  -> res
 
-  standaloneTypeDecs <- case mapM (buildEnumDecs typeSystemDef) execDocs of
-    Left  err  -> error $ T.unpack err
-    Right decs -> nub <$> (sequence . concat $ decs)
+  standaloneTypeDecs <-
+    case mapM (buildEnumDecs typeSystemDef . snd) execDocs of
+      Left  err  -> error $ T.unpack err
+      Right decs -> nub <$> (sequence . concat $ decs)
 
-  queryTypes <- sequence $ concat $ rights $ sequence $ mapM
-    (buildTypesForQuery typeSystemDef)
+  queryTypes <- sequence $ concatMap errorOnLeft $ sequence $ mapM
+    (buildQueryDecs typeSystemDef)
     execDocs
 
   pure $ standaloneTypeDecs <> queryTypes
  where
-  buildTypesForQuery schemaDoc execDoc@(GQL.ExecutableDocument eds) = do
-    let
-      typedOps = catMaybes $ flip map eds $ \case
-        GQL.ExecutableDefinitionOperation (GQL.OperationDefinitionTyped tod) ->
-          Just tod
-        _ -> Nothing
-    argTypeDecs    <- mapM (buildArgTypeDecs schemaDoc) typedOps
-    returnTypeDecs <- buildReturnTypeDec schemaDoc execDoc
-    pure (argTypeDecs <> [returnTypeDecs])
-
+  errorOnLeft = \case
+    Left  err -> error $ T.unpack err
+    Right a   -> a
 
 buildEnumDecs
   :: [GQL.TypeSystemDefinition] -> GQL.ExecutableDocument -> Either Text [DecQ]
@@ -184,6 +180,30 @@ buildEnumDecs sd (GQL.ExecutableDocument eds) = do
         Left $ "mkEnumDefs: Type not found in schema `" <> GQL.unName n <> "`"
     pure $ concat decs
 
+buildQueryDecs
+  :: [GQL.TypeSystemDefinition]
+  -> (Text, GQL.ExecutableDocument)
+  -> Either Text [DecQ]
+buildQueryDecs schemaDoc (queryText', GQL.ExecutableDocument eds) = do
+  rootOpName <- getRootOperationName schemaDoc eds
+  case eds of
+    [GQL.ExecutableDefinitionOperation opd] -> do
+      (responseName, recTypeDecs) <- buildReturnTypeDecs schemaDoc
+                                                         rootOpName
+                                                         opd
+      margDecs <- buildArgTypeDecs schemaDoc opd
+      let (argName, argDecs) = fromMaybe (''Void, []) margDecs
+          gqlInstance        = instanceD
+            (cxt [])
+            (appT (appT (conT ''GraphQLQuery) (conT argName)) (conT responseName))
+            [ funD (mkName "queryText")
+                   [clause [wildP] (normalB $ stringE $ T.unpack queryText') []]
+            ]
+      pure $ recTypeDecs <> argDecs <> [gqlInstance]
+    [GQL.ExecutableDefinitionFragment _] ->
+      Left "buildQueryDecs: Fragments not supported."
+    _ -> Left "buildQueryDecs: Only single executable definitions."
+
 lookupFieldType
   :: [GQL.TypeSystemDefinition]
   -> GQL.TypeDefinition
@@ -211,7 +231,6 @@ lookupFieldDefinition
   :: GQL.Name -> [GQL.FieldDefinition] -> Maybe GQL.FieldDefinition
 lookupFieldDefinition n = find (\GQL.FieldDefinition {..} -> n == _fldName)
 
-
 getRootOperationName
   :: [GQL.TypeSystemDefinition]
   -> [GQL.ExecutableDefinition]
@@ -229,18 +248,19 @@ getRootOperationName sd eds = case GQL.partitionExDefs eds of
   _ -> Left
     "getRootOperationName: Only single `TypedOperationDefinition` supported."
 
-
 buildArgTypeDecs
   :: [GQL.TypeSystemDefinition]
-  -> GQL.TypedOperationDefinition
-  -> Either Text DecQ
-buildArgTypeDecs sd tod = case GQL._todName tod of
-  Nothing           -> Left "buildArgTypeDecs: Unnamed Queries not permitted"
-  Just (GQL.Name n) -> do
-    let queryName = mkName $ mkUpperWord $ T.unpack (n <> "Args")
-        varDefs   = GQL._todVariableDefinitions tod
-    records <- mkRecord <$> buildArgRecords sd varDefs
-    Right $ tySynD queryName [] records
+  -> GQL.OperationDefinition
+  -> Either Text (Maybe (Name, [DecQ]))
+buildArgTypeDecs sd od = case od of
+  GQL.OperationDefinitionTyped tod -> case GQL._todName tod of
+    Nothing           -> Right Nothing
+    Just (GQL.Name n) -> do
+      let queryName = mkName $ mkUpperWord $ T.unpack (n <> "Args")
+          varDefs   = GQL._todVariableDefinitions tod
+      records <- mkRecord <$> buildArgRecords sd varDefs
+      Right $ Just (queryName, [tySynD queryName [] records])
+  _ -> Right Nothing
 
 buildArgRecords
   :: [GQL.TypeSystemDefinition]
@@ -305,7 +325,6 @@ lookUpRootOperationTypeDefinition tds opt =
     void $ lookUpTypeInSchema tds name
     Just $ GQL.RootOperationTypeDefinition opt (GQL.NamedType name)
 
-
 lookUpTypeInSchema
   :: [GQL.TypeSystemDefinition] -> GQL.Name -> Maybe GQL.TypeDefinition
 lookUpTypeInSchema _ n@(GQL.Name "String") =
@@ -321,29 +340,46 @@ lookUpTypeInSchema tds n = listToMaybe $ catMaybes $ flip map tds $ \case
   GQL.TypeSystemDefinitionType td ->
     if getTypeName td == n then Just td else Nothing
 
-
-buildReturnTypeDec
-  :: [GQL.TypeSystemDefinition] -> GQL.ExecutableDocument -> Either Text DecQ
-buildReturnTypeDec tds (GQL.ExecutableDocument exeDs) = case exeDs of
-  [GQL.ExecutableDefinitionOperation opd] -> do
-    (selset, GQL.Name n) <- case opd of
-      GQL.OperationDefinitionTyped GQL.TypedOperationDefinition { _todName = Just n, _todSelectionSet = ss }
-        -> pure (ss, n)
-      _ -> Left "buildReturnTypeDec: Only TypedOpertions with names supported."
-    rootName <- getRootOperationName tds exeDs
-    rootTd   <- case lookUpTypeInSchema tds rootName of
-      Nothing ->
-        Left
-          $  "buildReturnTypeDec: Root TypeDefinition not found for `"
-          <> GQL.unName rootName
-          <> "`"
-      Just td -> pure td
-    typeQs <- mapM (buildFromSel rootTd) selset
-    let responeName = mkName $ mkUpperWord $ T.unpack (n <> "Response")
-    pure $ tySynD responeName [] (mkRecord typeQs)
-  [GQL.ExecutableDefinitionFragment _] ->
-    Left "buildReturnTypeDec: Fragments not supported."
-  _ -> Left "buildReturnTypeDec: Only single executable definitions."
+buildReturnTypeDecs
+  :: [GQL.TypeSystemDefinition]
+  -> GQL.Name
+  -> GQL.OperationDefinition
+  -> Either Text (Name, [DecQ])
+buildReturnTypeDecs tds rootName opd = do
+  (selset, GQL.Name n) <- case opd of
+    GQL.OperationDefinitionTyped GQL.TypedOperationDefinition { _todName = Just n, _todSelectionSet = ss }
+      -> pure (ss, n)
+    _ -> Left "buildReturnTypeDec: Only TypedOpertions with names supported."
+  rootTd <- case lookUpTypeInSchema tds rootName of
+    Nothing ->
+      Left
+        $  "buildReturnTypeDec: Root TypeDefinition not found for `"
+        <> GQL.unName rootName
+        <> "`"
+    Just td -> pure td
+  typeQs <- mapM (buildFromSel rootTd) selset
+  let responseName = mkName $ mkUpperWord $ T.unpack (n <> "Response")
+      retTypeDec   = newtypeD
+        (cxt [])
+        responseName
+        []
+        Nothing
+        (normalC
+          responseName
+          [ bangType (bang noSourceUnpackedness noSourceStrictness)
+                     (mkRecord typeQs)
+          ]
+        )
+        [ derivClause
+            Nothing
+            [ conT ''Eq
+            , conT ''Show
+            , conT ''Generic
+            , conT ''ToJSON
+            , conT ''FromJSON
+            ]
+        ]
+  pure (responseName, [retTypeDec])
  where
   buildFromSel :: GQL.TypeDefinition -> GQL.Selection -> Either Text TypeQ
   buildFromSel td = \case
@@ -368,15 +404,12 @@ buildReturnTypeDec tds (GQL.ExecutableDocument exeDs) = case exeDs of
 
     _ -> Left "buildFromSel: Only Fields supported."
 
-
 gqlNameToName :: GQL.Name -> Name
 gqlNameToName = mkName . T.unpack . GQL.unName
-
 
 promotedTypeList :: [Q Type] -> Q Type
 promotedTypeList []       = promotedNilT
 promotedTypeList (t : ts) = [t| $promotedConsT $t $(promotedTypeList ts) |]
-
 
 addRecord :: Text -> TypeQ -> TypeQ
 addRecord name recordType =
@@ -386,18 +419,9 @@ addRecord name recordType =
 mkRecord :: [TypeQ] -> TypeQ
 mkRecord = appT (conT ''Record) . promotedTypeList
 
-
 mkUpperWord :: String -> String
 mkUpperWord []       = []
 mkUpperWord (x : xs) = toUpper x : xs
-
--- lookUpPrimitiveTypeQ :: GQL.Name -> Maybe TypeQ
--- lookUpPrimitiveTypeQ = \case
---   (GQL.Name "String" ) -> Just $ conT ''Text
---   (GQL.Name "Float"  ) -> Just $ conT ''Float
---   (GQL.Name "Int"    ) -> Just $ conT ''Int
---   (GQL.Name "Boolean") -> Just $ conT ''Bool
---   _                    -> Nothing
 
 mkTypeQFromName :: GQL.Name -> TypeQ
 mkTypeQFromName = \case
