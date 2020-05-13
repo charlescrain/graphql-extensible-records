@@ -192,13 +192,14 @@ buildQueryDecs schemaDoc (queryText', GQL.ExecutableDocument eds) = do
                                                          rootOpName
                                                          opd
       margDecs <- buildArgTypeDecs schemaDoc opd
-      let (argName, argDecs) = fromMaybe (''Void, []) margDecs
-          gqlInstance        = instanceD
-            (cxt [])
-            (appT (appT (conT ''GraphQLQuery) (conT argName)) (conT responseName))
-            [ funD (mkName "queryText")
-                   [clause [wildP] (normalB $ stringE $ T.unpack queryText') []]
-            ]
+      let
+        (argName, argDecs) = fromMaybe (''Void, []) margDecs
+        gqlInstance        = instanceD
+          (cxt [])
+          (appT (appT (conT ''GraphQLQuery) (conT argName)) (conT responseName))
+          [ funD (mkName "queryText")
+                 [clause [wildP] (normalB $ stringE $ T.unpack queryText') []]
+          ]
       pure $ recTypeDecs <> argDecs <> [gqlInstance]
     [GQL.ExecutableDefinitionFragment _] ->
       Left "buildQueryDecs: Fragments not supported."
@@ -259,7 +260,26 @@ buildArgTypeDecs sd od = case od of
       let queryName = mkName $ mkUpperWord $ T.unpack (n <> "Args")
           varDefs   = GQL._todVariableDefinitions tod
       records <- mkRecord <$> buildArgRecords sd varDefs
-      Right $ Just (queryName, [tySynD queryName [] records])
+      let typeDef = newtypeD
+            (cxt [])
+            queryName
+            []
+            Nothing
+            (normalC
+              queryName
+              [bangType (bang noSourceUnpackedness noSourceStrictness) records]
+            )
+            [ derivClause
+                Nothing
+                [ conT ''Eq
+                , conT ''Show
+                , conT ''Generic
+                , conT ''ToJSON
+                , conT ''FromJSON
+                ]
+            ]
+
+      Right $ Just (queryName, [typeDef])
   _ -> Right Nothing
 
 buildArgRecords
