@@ -7,6 +7,7 @@ import Language.GraphQL.Extensible
 $(buildTypes 
     "./test/assets/graphql/schema.gql" 
     [ "./test/assets/graphql/queryTest.gql"
+    , "./test/assets/graphql/noArgsQuery.gql"
     ]
  )
 

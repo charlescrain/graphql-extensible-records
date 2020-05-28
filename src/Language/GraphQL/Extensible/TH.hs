@@ -247,28 +247,32 @@ buildArgTypeDecs sd od = case od of
     Nothing           -> Right Nothing
     Just (GQL.Name n) -> do
       let queryName = mkName $ mkUpperWord $ T.unpack (n <> "Args")
-          varDefs   = GQL._todVariableDefinitions tod
-      records <- mkRecord <$> buildArgRecords sd varDefs
-      let typeDef = newtypeD
-            (cxt [])
-            queryName
-            []
-            Nothing
-            (normalC
+      case GQL._todVariableDefinitions tod of
+        []      -> pure Nothing
+        varDefs -> do
+          records <- mkRecord <$> buildArgRecords sd varDefs
+          let
+            typeDef = newtypeD
+              (cxt [])
               queryName
-              [bangType (bang noSourceUnpackedness noSourceStrictness) records]
-            )
-            [ derivClause
-                Nothing
-                [ conT ''Eq
-                , conT ''Show
-                , conT ''Generic
-                , conT ''ToJSON
-                , conT ''FromJSON
+              []
+              Nothing
+              (normalC
+                queryName
+                [ bangType (bang noSourceUnpackedness noSourceStrictness)
+                           records
                 ]
-            ]
-
-      Right $ Just (queryName, [typeDef])
+              )
+              [ derivClause
+                  Nothing
+                  [ conT ''Eq
+                  , conT ''Show
+                  , conT ''Generic
+                  , conT ''ToJSON
+                  , conT ''FromJSON
+                  ]
+              ]
+          Right $ Just (queryName, [typeDef])
   _ -> Right Nothing
 
 buildArgRecords
