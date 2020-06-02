@@ -1,0 +1,10 @@
+query testSameEnumValue(
+  $address: String! = "hi"
+  $orderBy: [NftLikesOrderBy!]
+) {
+  allNftLikes(condition: { contractAddress: $address }, orderBy: $orderBy) {
+    nodes {
+      dateCreated
+    }
+  }
+}

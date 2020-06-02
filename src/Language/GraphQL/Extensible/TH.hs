@@ -144,12 +144,14 @@ buildEnumDecs sd (GQL.ExecutableDocument eds) = do
   mkEnumDefs ns = do
     decs <- forM ns $ \n -> case lookUpTypeInSchema sd n of
       Just (GQL.TypeDefinitionEnum GQL.EnumTypeDefinition {..}) -> do
-        let constrs =
+        let 
+            typeNameStr = T.unpack . GQL.unName $ n
+            constrs =
               flip map _etdValueDefinitions $ \GQL.EnumValueDefinition {..} ->
                 normalC
-                  (mkName . T.unpack . GQL.unName $ GQL.unEnumValue _evdName)
+                  (mkName . ( (<>) (typeNameStr <> "_") ) . T.unpack . GQL.unName $ GQL.unEnumValue _evdName)
                   []
-            typeName = mkName . T.unpack . GQL.unName $ n
+            typeName = mkName typeNameStr
             dec      = dataD
               (cxt [])
               typeName

@@ -8,6 +8,7 @@ $(buildTypes
     "./test/assets/graphql/schema.gql" 
     [ "./test/assets/graphql/queryTest.gql"
     , "./test/assets/graphql/noArgsQuery.gql"
+    , "./test/assets/graphql/testSameEnumValue.gql"
     ]
  )
 
