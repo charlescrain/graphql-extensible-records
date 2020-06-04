@@ -9,7 +9,7 @@ module Language.GraphQL.Extensible
   )
 where
 
-import           Data.Extensible hiding (Nullable)
+import           Data.Extensible         hiding ( Nullable )
 import           Data.FileEmbed                 ( makeRelativeToProject )
 import           Data.Aeson                     ( FromJSON(..)
                                                 , ToJSON(..)

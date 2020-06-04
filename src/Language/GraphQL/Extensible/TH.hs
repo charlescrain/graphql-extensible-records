@@ -13,8 +13,11 @@ import           Data.Maybe                     ( listToMaybe
                                                 , mapMaybe
                                                 , fromMaybe
                                                 )
-import           Data.Aeson                     ( ToJSON
-                                                , FromJSON
+import           Data.Aeson                     ( ToJSON(..)
+                                                , FromJSON(..)
+                                                , defaultOptions
+                                                , genericToJSON
+                                                , genericParseJSON
                                                 )
 import           System.Directory               ( makeAbsolute )
 import           Data.Text                      ( Text )
@@ -31,6 +34,7 @@ import           Control.Monad                  ( void
                                                 )
 import           Language.GraphQL.Extensible.Class
 import           Language.GraphQL.Extensible.Types
+import Data.Aeson.Types (Options(constructorTagModifier))
 
 
 buildTypes :: String -> [String] -> Q [Dec]
@@ -146,12 +150,16 @@ buildEnumDecs sd (GQL.ExecutableDocument eds) = do
       Just (GQL.TypeDefinitionEnum GQL.EnumTypeDefinition {..}) -> do
         let 
             typeNameStr = T.unpack . GQL.unName $ n
+            constructorPrefix = typeNameStr <> "_"
             constrs =
               flip map _etdValueDefinitions $ \GQL.EnumValueDefinition {..} ->
                 normalC
-                  (mkName . ( (<>) (typeNameStr <> "_") ) . T.unpack . GQL.unName $ GQL.unEnumValue _evdName)
+                  (mkName .  (<>) constructorPrefix  . T.unpack . GQL.unName $ GQL.unEnumValue _evdName)
                   []
             typeName = mkName typeNameStr
+            jsonOptionsExpr =  [|defaultOptions {constructorTagModifier = drop (length (constructorPrefix :: String))} |]
+            toJSON' = [| genericToJSON $(jsonOptionsExpr) |]
+            parseJSON' = [| genericParseJSON $(jsonOptionsExpr) |]
             dec      = dataD
               (cxt [])
               typeName
@@ -159,9 +167,21 @@ buildEnumDecs sd (GQL.ExecutableDocument eds) = do
               Nothing
               constrs
               [derivClause Nothing [conT ''Eq, conT ''Show, conT ''Generic]]
-            mkInstance className =
-              instanceD (cxt []) (appT (conT className) (conT typeName)) []
-        pure [dec, mkInstance ''ToJSON, mkInstance ''FromJSON]
+            toJSONInstance = instanceD
+                (cxt [])
+                (appT (conT ''ToJSON) (conT typeName)) 
+                [ funD (mkName "toJSON")
+                       [clause [] (normalB toJSON') []]
+                ]
+            fromJSONInstance = instanceD
+                (cxt [])
+                (appT (conT ''FromJSON) (conT typeName)) 
+                [ funD (mkName "parseJSON")
+                       [clause [] (normalB parseJSON') []]
+                ]
+            -- mkInstance className =
+            --   instanceD (cxt []) (appT (conT className) (conT typeName)) []
+        pure [dec, toJSONInstance, fromJSONInstance]
       Just _ ->
         Left
           $  "mkEnumDefs: Found non-enum type for name `"
