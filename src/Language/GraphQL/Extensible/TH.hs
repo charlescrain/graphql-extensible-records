@@ -461,7 +461,7 @@ mkUpperWord (x : xs) = toUpper x : xs
 mkTypeQFromName :: GQL.Name -> TypeQ
 mkTypeQFromName = \case
   (GQL.Name "String" ) -> conT ''Text
-  (GQL.Name "Float"  ) -> conT ''Float
+  (GQL.Name "Float"  ) -> conT ''Double
   (GQL.Name "Int"    ) -> conT ''Int
   (GQL.Name "Boolean") -> conT ''Bool
   n                    -> conT . mkName . T.unpack . GQL.unName $ n
