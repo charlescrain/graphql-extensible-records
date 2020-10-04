@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 7131140e520402bbc013b2dcfbca43360cd3238a650949e5d136dd5dd71aabaa
+-- hash: a4449f84aca9e7ca695dbe1c8e4e945518e21483c7853ddc52bbbd6fc9367733
 
 name:           graphql-extensible-records
 version:        0.1.0.0
@@ -27,10 +27,9 @@ source-repository head
 
 library
   exposed-modules:
-      Data.GraphQL.Client.Extensible
-      Data.GraphQL.Client.Extensible.TH
-      Data.GraphQL.Client.Query
-      Data.GraphQL.Client.Query.Class
+      Language.GraphQL.Extensible
+      Language.GraphQL.Extensible.Class
+      Language.GraphQL.Extensible.TH
   other-modules:
       Paths_graphql_extensible_records
   hs-source-dirs:
@@ -52,10 +51,10 @@ test-suite graphql-extensible-records-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Data.GraphQL.Client.Extensible.Spec
-      Data.GraphQL.Client.Extensible.Spec.ExpectedTypes
-      Data.GraphQL.Client.Extensible.Spec.Gen
-      Data.GraphQL.Client.Extensible.Spec.SchemaScalarTypes
+      Language.GraphQL.Extensible.Spec
+      Language.GraphQL.Extensible.Spec.ExpectedTypes
+      Language.GraphQL.Extensible.Spec.Gen
+      Language.GraphQL.Extensible.Spec.SchemaScalarTypes
       Paths_graphql_extensible_records
   hs-source-dirs:
       test
