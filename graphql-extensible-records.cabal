@@ -1,0 +1,74 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 7131140e520402bbc013b2dcfbca43360cd3238a650949e5d136dd5dd71aabaa
+
+name:           graphql-extensible-records
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/charlescrain/graphql-extensible-records#readme>
+homepage:       https://github.com/charlescrain/graphql-extensible-records#readme
+bug-reports:    https://github.com/charlescrain/graphql-extensible-records/issues
+author:         Charles Crain
+maintainer:     craincharles@gmail.com
+copyright:      Pixura
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/charlescrain/graphql-extensible-records
+
+library
+  exposed-modules:
+      Data.GraphQL.Client.Extensible
+      Data.GraphQL.Client.Extensible.TH
+      Data.GraphQL.Client.Query
+      Data.GraphQL.Client.Query.Class
+  other-modules:
+      Paths_graphql_extensible_records
+  hs-source-dirs:
+      src
+  default-extensions: ApplicativeDo BangPatterns ConstraintKinds DataKinds DefaultSignatures DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies EmptyCase ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedStrings OverloadedLabels PatternSynonyms RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TupleSections TypeApplications TypeFamilies TypeFamilyDependencies TypeOperators TemplateHaskell
+  ghc-options: -Wall -Werror
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , directory
+    , extensible >=0.7.1
+    , file-embed
+    , graphql-parser
+    , template-haskell
+    , text
+  default-language: Haskell2010
+
+test-suite graphql-extensible-records-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Data.GraphQL.Client.Extensible.Spec
+      Data.GraphQL.Client.Extensible.Spec.ExpectedTypes
+      Data.GraphQL.Client.Extensible.Spec.Gen
+      Data.GraphQL.Client.Extensible.Spec.SchemaScalarTypes
+      Paths_graphql_extensible_records
+  hs-source-dirs:
+      test
+  default-extensions: ApplicativeDo BangPatterns ConstraintKinds DataKinds DefaultSignatures DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies EmptyCase ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedStrings OverloadedLabels PatternSynonyms RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TupleSections TypeApplications TypeFamilies TypeFamilyDependencies TypeOperators TemplateHaskell
+  ghc-options: -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , base >=4.7 && <5
+    , directory
+    , extensible >=0.7.1
+    , file-embed
+    , graphql-extensible-records
+    , graphql-parser
+    , template-haskell
+    , text
+  default-language: Haskell2010
