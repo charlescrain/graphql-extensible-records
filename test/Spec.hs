@@ -1,4 +1,4 @@
-import qualified Language.GraphQL.ExtensibleSpec as Extensible
+import qualified Language.GraphQL.Extensible.Spec as Extensible
 
 main :: IO ()
 main = Extensible.spec

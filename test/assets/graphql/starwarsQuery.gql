@@ -1,4 +1,4 @@
-query Films($firstFilms: Int! = 10, $firstStarships: Int! = 5) {
+query Films($firstFilms: Int!, $firstStarships: Int!) {
   allFilms(first: $firstFilms) {
     pageInfo {
       hasNextPage

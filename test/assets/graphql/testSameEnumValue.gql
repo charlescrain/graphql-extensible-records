@@ -1,5 +1,5 @@
 query testSameEnumValue(
-  $address: String! = "hi"
+  $address: String!
   $orderBy: [NftLikesOrderBy!]
 ) {
   allNftLikes(condition: { contractAddress: $address }, orderBy: $orderBy) {

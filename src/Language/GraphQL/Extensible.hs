@@ -2,7 +2,6 @@ module Language.GraphQL.Extensible
   ( buildTypes
   , module Data.Extensible
   , module Language.GraphQL.Extensible.Class
-  , module Language.GraphQL.Extensible.Types
   , makeRelativeToProject
   , FromJSON(..)
   , ToJSON(..)
@@ -16,4 +15,3 @@ import           Data.Aeson                     ( FromJSON(..)
                                                 )
 import           Language.GraphQL.Extensible.TH ( buildTypes )
 import           Language.GraphQL.Extensible.Class
-import           Language.GraphQL.Extensible.Types

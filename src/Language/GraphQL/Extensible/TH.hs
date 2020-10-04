@@ -29,14 +29,21 @@ import           Data.List                      ( nub
                                                 )
 
 import qualified Language.GraphQL.Draft.Syntax as GQL
-import           Control.Monad                  ( void
+import           Control.Monad                  ( when
+                                                , void
                                                 , forM
                                                 )
 import           Language.GraphQL.Extensible.Class
-import           Language.GraphQL.Extensible.Types
-import Data.Aeson.Types (Options(constructorTagModifier))
+import           Data.Aeson.Types               ( Options
+                                                  ( constructorTagModifier
+                                                  )
+                                                )
 
 
+--------------------------------------------------------------------------------
+--- | buildTypes
+--------------------------------------------------------------------------------
+-- | Construct type declarations for any query args, response, and any types required from the schema
 buildTypes :: String -> [String] -> Q [Dec]
 buildTypes schemaFilePath queryFilePaths = do
   absolutePaths <- mapM (runIO . makeAbsolute) (schemaFilePath : queryFilePaths)
@@ -66,6 +73,7 @@ buildTypes schemaFilePath queryFilePaths = do
     Left  err -> error $ T.unpack err
     Right a   -> a
 
+-- | Construct type declarations for enums used by the query
 buildEnumDecs
   :: [GQL.TypeSystemDefinition] -> GQL.ExecutableDocument -> Either Text [DecQ]
 buildEnumDecs sd (GQL.ExecutableDocument eds) = do
@@ -148,37 +156,39 @@ buildEnumDecs sd (GQL.ExecutableDocument eds) = do
   mkEnumDefs ns = do
     decs <- forM ns $ \n -> case lookUpTypeInSchema sd n of
       Just (GQL.TypeDefinitionEnum GQL.EnumTypeDefinition {..}) -> do
-        let 
-            typeNameStr = T.unpack . GQL.unName $ n
-            constructorPrefix = typeNameStr <> "_"
-            constrs =
-              flip map _etdValueDefinitions $ \GQL.EnumValueDefinition {..} ->
-                normalC
-                  (mkName .  (<>) constructorPrefix  . T.unpack . GQL.unName $ GQL.unEnumValue _evdName)
-                  []
-            typeName = mkName typeNameStr
-            jsonOptionsExpr =  [|defaultOptions {constructorTagModifier = drop (length (constructorPrefix :: String))} |]
-            toJSON' = [| genericToJSON $(jsonOptionsExpr) |]
-            parseJSON' = [| genericParseJSON $(jsonOptionsExpr) |]
-            dec      = dataD
-              (cxt [])
-              typeName
-              []
-              Nothing
-              constrs
-              [derivClause Nothing [conT ''Eq, conT ''Show, conT ''Generic]]
-            toJSONInstance = instanceD
-                (cxt [])
-                (appT (conT ''ToJSON) (conT typeName)) 
-                [ funD (mkName "toJSON")
-                       [clause [] (normalB toJSON') []]
-                ]
-            fromJSONInstance = instanceD
-                (cxt [])
-                (appT (conT ''FromJSON) (conT typeName)) 
-                [ funD (mkName "parseJSON")
-                       [clause [] (normalB parseJSON') []]
-                ]
+        let
+          typeNameStr       = T.unpack . GQL.unName $ n
+          constructorPrefix = typeNameStr <> "_"
+          constrs =
+            flip map _etdValueDefinitions $ \GQL.EnumValueDefinition {..} ->
+              normalC
+                ( mkName
+                . (<>) constructorPrefix
+                . T.unpack
+                . GQL.unName
+                $ GQL.unEnumValue _evdName
+                )
+                []
+          typeName = mkName typeNameStr
+          jsonOptionsExpr
+            = [|defaultOptions {constructorTagModifier = drop (length (constructorPrefix :: String))} |]
+          toJSON'    = [| genericToJSON $(jsonOptionsExpr) |]
+          parseJSON' = [| genericParseJSON $(jsonOptionsExpr) |]
+          dec        = dataD
+            (cxt [])
+            typeName
+            []
+            Nothing
+            constrs
+            [derivClause Nothing [conT ''Eq, conT ''Show, conT ''Generic]]
+          toJSONInstance = instanceD
+            (cxt [])
+            (appT (conT ''ToJSON) (conT typeName))
+            [funD (mkName "toJSON") [clause [] (normalB toJSON') []]]
+          fromJSONInstance = instanceD
+            (cxt [])
+            (appT (conT ''FromJSON) (conT typeName))
+            [funD (mkName "parseJSON") [clause [] (normalB parseJSON') []]]
             -- mkInstance className =
             --   instanceD (cxt []) (appT (conT className) (conT typeName)) []
         pure [dec, toJSONInstance, fromJSONInstance]
@@ -191,6 +201,7 @@ buildEnumDecs sd (GQL.ExecutableDocument eds) = do
         Left $ "mkEnumDefs: Type not found in schema `" <> GQL.unName n <> "`"
     pure $ concat decs
 
+-- | Constructs type declarations for the query args and response types as well as instances for the types. Does not include dependent types such as enums.
 buildQueryDecs
   :: [GQL.TypeSystemDefinition]
   -> (Text, GQL.ExecutableDocument)
@@ -216,6 +227,7 @@ buildQueryDecs schemaDoc (queryText', GQL.ExecutableDocument eds) = do
       Left "buildQueryDecs: Fragments not supported."
     _ -> Left "buildQueryDecs: Only single executable definitions."
 
+-- | Looks up the TypeDefinition and GType
 lookupFieldType
   :: [GQL.TypeSystemDefinition]
   -> GQL.TypeDefinition
@@ -310,14 +322,18 @@ buildArgRecords sd = mapM buildArgType
         isOptional               = case GQL._vdDefaultValue vdef of
           Nothing -> False
           Just _  -> True
-        wrapMaybe = if isOptional then appT (conT ''Maybe) else id
+    when isOptional
+      $  Left
+      $  "Default values for arguments not supported. `"
+      <> GQL.unName argName
+      <> "` has default value"
     typeQ <- case lookUpTypeInSchema sd typeName of
       Nothing ->
         Left
           $  "buildArgRecords: Type not found in schema: "
           <> GQL.unName typeName
       Just _ -> Right $ mkTypeQFromName typeName
-    let recordType = wrapMaybe $ wrap (GQL._vdType vdef) typeQ
+    let recordType = wrap (GQL._vdType vdef) typeQ
     Right $ uInfixT recordName (mkName ">:") recordType
 
 wrap :: GQL.GType -> TypeQ -> TypeQ
@@ -326,7 +342,7 @@ wrap gt@(GQL.TypeList _ lt) tq =
   wrapNull gt $ wrapList gt $ wrap (GQL.unListType lt) tq
 
 wrapNull :: GQL.GType -> TypeQ -> TypeQ
-wrapNull gt = if GQL.isNullable gt then appT (conT ''Nullable) else id
+wrapNull gt = if GQL.isNullable gt then appT (conT ''Maybe) else id
 
 wrapList :: GQL.GType -> TypeQ -> TypeQ
 wrapList gt = if GQL.isListType gt then appT listT else id

@@ -1,5 +1,5 @@
 query getUser(
-    $address: String! = "hi"
+    $address: String!
     $orderBy: [UsersOrderBy!]
 ) {
   user: allUsers(condition: { ethereumAddress: $address }, orderBy: $orderBy) {
