@@ -16,6 +16,7 @@ $( buildTypes
        [ "./test/assets/graphql/queryTest.gql"
        , "./test/assets/graphql/noArgsQuery.gql"
        , "./test/assets/graphql/testSameEnumValue.gql"
+       , "./test/assets/graphql/inputType.gql"
        ]
  )
 

@@ -1,0 +1,5 @@
+mutation UserInputMutation($x: NftLikeInput!) {
+  createNftLike(input: { nftLike: $x }) {
+    clientMutationId
+  }
+}

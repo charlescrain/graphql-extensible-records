@@ -213,6 +213,7 @@ buildQueryDecs schemaDoc (queryText', GQL.ExecutableDocument eds) = do
       (responseName, recTypeDecs) <- buildReturnTypeDecs schemaDoc
                                                          rootOpName
                                                          opd
+      argInputTypes <- buildArgInputTypeDecs schemaDoc opd
       margDecs <- buildArgTypeDecs schemaDoc opd
       let
         (argName, argDecs) = fromMaybe (''Void, []) margDecs
@@ -222,7 +223,7 @@ buildQueryDecs schemaDoc (queryText', GQL.ExecutableDocument eds) = do
           [ funD (mkName "queryText")
                  [clause [wildP] (normalB $ stringE $ T.unpack queryText') []]
           ]
-      pure $ recTypeDecs <> argDecs <> [gqlInstance]
+      pure $ recTypeDecs <> argDecs <> [gqlInstance] <> argInputTypes
     [GQL.ExecutableDefinitionFragment _] ->
       Left "buildQueryDecs: Fragments not supported."
     _ -> Left "buildQueryDecs: Only single executable definitions."
@@ -284,30 +285,63 @@ buildArgTypeDecs sd od = case od of
       case GQL._todVariableDefinitions tod of
         []      -> pure Nothing
         varDefs -> do
-          records <- mkRecord <$> buildArgRecords sd varDefs
+          records <- buildArgRecords sd varDefs
           let
-            typeDef = newtypeD
-              (cxt [])
-              queryName
-              []
-              Nothing
-              (normalC
-                queryName
-                [ bangType (bang noSourceUnpackedness noSourceStrictness)
-                           records
-                ]
-              )
-              [ derivClause
-                  Nothing
-                  [ conT ''Eq
-                  , conT ''Show
-                  , conT ''Generic
-                  , conT ''ToJSON
-                  , conT ''FromJSON
-                  ]
-              ]
+            typeDef = mkNewtypeForRecords queryName records
           Right $ Just (queryName, [typeDef])
   _ -> Right Nothing
+
+buildArgInputTypeDecs
+  :: [GQL.TypeSystemDefinition]
+  -> GQL.OperationDefinition
+  -> Either Text ([DecQ])
+buildArgInputTypeDecs sd od = case od of
+  GQL.OperationDefinitionTyped tod -> case GQL._todName tod of
+    Nothing           -> Right []
+    Just _ -> case GQL._todVariableDefinitions tod of
+      []      -> pure []
+      varDefs -> concat <$> forM varDefs inputTypeDecsFromVarDef
+  _ -> Right []
+  where
+  inputTypeDecsFromVarDef (GQL.VariableDefinition _ n _) = buildInputTypeDecFromGType n
+
+  buildInputTypeDecFromGType (GQL.TypeList _ (GQL.ListType gt))  = buildInputTypeDecFromGType gt
+  buildInputTypeDecFromGType (GQL.TypeNamed _ (GQL.NamedType n)) = 
+    case lookUpTypeInSchema sd n of
+      Nothing -> Left $ "buildArgInputTypeDecs: No type found in schema for: `" <> GQL.unName n <> "`"
+      Just (GQL.TypeDefinitionInputObject (GQL.InputObjectTypeDefinition _ typeName _ valDefs )) -> do
+        decs <- concat <$> mapM buildInputTypeDecFromGType (map (GQL._ivdType) valDefs)
+        dec <- mkNewtypeForRecords (mkName . T.unpack . GQL.unName $ typeName) <$> mapM buildInputTypeRecord valDefs
+        pure (dec : decs)
+      Just (GQL.TypeDefinitionScalar _) -> pure []
+      Just (GQL.TypeDefinitionEnum _) -> pure []
+      Just (GQL.TypeDefinitionObject _) -> Left $ "buildArgInputTypeDecs: Object type found in schema for: `" <> GQL.unName n <> "`"
+      Just (GQL.TypeDefinitionInterface _) -> Left $ "buildArgInputTypeDecs: Interface type found in schema for: `" <> GQL.unName n <> "`"
+      Just (GQL.TypeDefinitionUnion _) -> Left $ "buildArgInputTypeDecs: Union type found in schema for: `" <> GQL.unName n <> "`"
+      -- _ -> Left $ "buildArgInputTypeDecs: Non-input type found in schema for: `" <> GQL.unName n <> "`"
+
+  buildInputTypeRecord ivdef = do
+    let argName                  = GQL._ivdName ivdef
+        recordName = litT (strTyLit $ T.unpack $ GQL.unName argName)
+        (GQL.NamedType typeName) = GQL.getBaseType (GQL._ivdType ivdef)
+        isOptional               = case GQL._ivdDefaultValue ivdef of
+          Nothing -> False
+          Just _  -> True
+    when isOptional
+      $  Left
+      $  "buildInputTypeRecord: Default values for arguments not supported. `"
+      <> GQL.unName argName
+      <> "` has default value"
+    typeQ <- case lookUpTypeInSchema sd typeName of
+      Nothing ->
+        Left
+          $  "buildInputTypeRecord: Type not found in schema: "
+          <> GQL.unName typeName
+      Just _ -> Right $ mkTypeQFromName typeName
+    let recordType = wrap (GQL._ivdType ivdef) typeQ
+    Right $ uInfixT recordName (mkName ">:") recordType
+
+
 
 buildArgRecords
   :: [GQL.TypeSystemDefinition]
@@ -408,28 +442,9 @@ buildReturnTypeDecs tds rootName opd = do
         <> GQL.unName rootName
         <> "`"
     Just td -> pure td
-  typeQs <- mapM (buildFromSel rootTd) selset
+  typeQs <-  mapM (buildFromSel rootTd) selset
   let responseName = mkName $ mkUpperWord $ T.unpack (n <> "Response")
-      retTypeDec   = newtypeD
-        (cxt [])
-        responseName
-        []
-        Nothing
-        (normalC
-          responseName
-          [ bangType (bang noSourceUnpackedness noSourceStrictness)
-                     (mkRecord typeQs)
-          ]
-        )
-        [ derivClause
-            Nothing
-            [ conT ''Eq
-            , conT ''Show
-            , conT ''Generic
-            , conT ''ToJSON
-            , conT ''FromJSON
-            ]
-        ]
+      retTypeDec   = mkNewtypeForRecords responseName typeQs
   pure (responseName, [retTypeDec])
  where
   buildFromSel :: GQL.TypeDefinition -> GQL.Selection -> Either Text TypeQ
@@ -454,6 +469,28 @@ buildReturnTypeDecs tds rootName opd = do
       pure $ addRecord recName typeq
 
     _ -> Left "buildFromSel: Only Fields supported."
+
+mkNewtypeForRecords :: Name -> [TypeQ] -> DecQ
+mkNewtypeForRecords n  records =  newtypeD
+        (cxt [])
+        n
+        []
+        Nothing
+        (normalC
+          n
+          [ bangType (bang noSourceUnpackedness noSourceStrictness)
+                     (mkRecord records)
+          ]
+        )
+        [ derivClause
+            Nothing
+            [ conT ''Eq
+            , conT ''Show
+            , conT ''Generic
+            , conT ''ToJSON
+            , conT ''FromJSON
+            ]
+        ]
 
 gqlNameToName :: GQL.Name -> Name
 gqlNameToName = mkName . T.unpack . GQL.unName
