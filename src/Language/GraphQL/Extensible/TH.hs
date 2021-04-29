@@ -6,6 +6,7 @@ import           Language.Haskell.TH
 import           Language.Haskell.TH.Syntax
 import           Language.GraphQL.Draft.Parser
 import           Data.Void                      ( Void )
+import           Data.Typeable
 import           GHC.Generics
 import           Data.Char                      ( toUpper )
 import           Data.Maybe                     ( listToMaybe
@@ -43,7 +44,8 @@ import           Data.Aeson.Types               ( Options
 --------------------------------------------------------------------------------
 --- | buildTypes
 --------------------------------------------------------------------------------
--- | Construct type declarations for any query args, response, and any types required from the schema
+-- | Construct type declarations for any query args, response, and any types
+--   required from the schema
 buildTypes :: String -> [String] -> Q [Dec]
 buildTypes schemaFilePath queryFilePaths = do
   absolutePaths <- mapM (runIO . makeAbsolute) (schemaFilePath : queryFilePaths)
@@ -487,6 +489,7 @@ mkNewtypeForRecords n  records =  newtypeD
             [ conT ''Eq
             , conT ''Show
             , conT ''Generic
+            , conT ''Typeable
             , conT ''ToJSON
             , conT ''FromJSON
             ]
