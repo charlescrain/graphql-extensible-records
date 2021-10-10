@@ -17,7 +17,7 @@
 #
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
-resolver: lts-14.27
+resolver: lts-18.13
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -44,7 +44,7 @@ extra-deps:
   - extensible-0.8
   - membership-0
   - git: https://github.com/Pixura/graphql-parser-hs
-    commit: b4f512e909ed6fa32a68e92e159bfa5ee4118f61
+    commit: dc322b732043d35c8c80f091a56c9770f5f6492b
 # Override default flag values for local packages and extra-deps
 # flags: {}
 

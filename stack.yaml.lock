@@ -19,22 +19,19 @@ packages:
   original:
     hackage: membership-0
 - completed:
-    cabal-file:
-      size: 3352
-      sha256: 9aa0e7957e8bb9d27fea6c714fc6cbe19f795d41605ae1fd12f59843d3d85f56
     name: graphql-parser
     version: 0.1.0.0
     git: https://github.com/Pixura/graphql-parser-hs
     pantry-tree:
       size: 1944
-      sha256: 619c5c8fe7ece589c3d7ce1531941a50bf146161b9e24285b630e464a8970607
-    commit: b4f512e909ed6fa32a68e92e159bfa5ee4118f61
+      sha256: 104e8e6582a5b59b4170a87f5dceba68067eb65b8070b75234bc592683de330d
+    commit: dc322b732043d35c8c80f091a56c9770f5f6492b
   original:
     git: https://github.com/Pixura/graphql-parser-hs
-    commit: b4f512e909ed6fa32a68e92e159bfa5ee4118f61
+    commit: dc322b732043d35c8c80f091a56c9770f5f6492b
 snapshots:
 - completed:
-    size: 524996
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/14/27.yaml
-    sha256: 7ea31a280c56bf36ff591a7397cc384d0dff622e7f9e4225b47d8980f019a0f0
-  original: lts-14.27
+    size: 586268
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/18/13.yaml
+    sha256: d9e658a22cfe8d87a64fdf219885f942fef5fe2bcb156a9800174911c5da2443
+  original: lts-18.13
