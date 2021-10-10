@@ -228,11 +228,11 @@ buildQueryDecs schemaType schemaDoc (queryText', GQL.ExecutableDocument eds) = d
   rootOpName <- getRootOperationName schemaDoc eds
   case eds of
     [GQL.ExecutableDefinitionOperation opd] -> do
-      (responseName, recTypeDecs) <- buildReturnTypeDecs schemaDoc
+      (responseName, recTypeDecs) <- buildReturnTypeDecs schemaType schemaDoc
                                                          rootOpName
                                                          opd
       argInputTypes <- buildArgInputTypeDecs schemaDoc opd
-      margDecs <- buildArgTypeDecs schemaType schemaDoc opd
+      margDecs <- buildArgTypeDecs schemaDoc opd
       let
         (argName, argDecs) = fromMaybe (''Void, []) margDecs
         gqlInstance        = instanceD
@@ -292,11 +292,10 @@ getRootOperationName sd eds = case GQL.partitionExDefs eds of
     "getRootOperationName: Only single `TypedOperationDefinition` supported."
 
 buildArgTypeDecs
-  :: Exp
-  -> [GQL.TypeSystemDefinition]
+  :: [GQL.TypeSystemDefinition]
   -> GQL.OperationDefinition
   -> Either Text (Maybe (Name, [DecQ]))
-buildArgTypeDecs sch sd od = case od of
+buildArgTypeDecs sd od = case od of
   GQL.OperationDefinitionTyped tod -> case GQL._todName tod of
     Nothing           -> Right Nothing
     Just (GQL.Name n) -> do
@@ -307,8 +306,7 @@ buildArgTypeDecs sch sd od = case od of
           records <- buildArgRecords sd varDefs
           let
             typeDef = mkNewtypeForRecords queryName records
-            hasSchemaInfoInsD = instanceForHasSchemaInfo sch queryName
-          Right $ Just (queryName, [typeDef, hasSchemaInfoInsD])
+          Right $ Just (queryName, [typeDef])
   _ -> Right Nothing
 
 buildArgInputTypeDecs
@@ -446,11 +444,12 @@ lookUpTypeInSchema tds n = listToMaybe $ catMaybes $ flip map tds $ \case
     if getTypeName td == n then Just td else Nothing
 
 buildReturnTypeDecs
-  :: [GQL.TypeSystemDefinition]
+  :: Exp
+  -> [GQL.TypeSystemDefinition]
   -> GQL.Name
   -> GQL.OperationDefinition
   -> Either Text (Name, [DecQ])
-buildReturnTypeDecs tds rootName opd = do
+buildReturnTypeDecs schematype tds rootName opd = do
   (selset, GQL.Name n) <- case opd of
     GQL.OperationDefinitionTyped GQL.TypedOperationDefinition { _todName = Just n, _todSelectionSet = ss }
       -> pure (ss, n)
@@ -465,7 +464,8 @@ buildReturnTypeDecs tds rootName opd = do
   typeQs <-  mapM (buildFromSel rootTd) selset
   let responseName = mkName $ mkUpperWord $ T.unpack (n <> "Response")
       retTypeDec   = mkNewtypeForRecords responseName typeQs
-  pure (responseName, [retTypeDec])
+      instanceSchemaInfo = instanceForHasSchemaInfo schematype responseName
+  pure (responseName, [retTypeDec, instanceSchemaInfo])
  where
   buildFromSel :: GQL.TypeDefinition -> GQL.Selection -> Either Text TypeQ
   buildFromSel td = \case
