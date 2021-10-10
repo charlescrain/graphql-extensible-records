@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c0c922546c1a3826db027d5509915048d398b11ab7f1c14933101a62dae48520
+-- hash: 468c33bbb5d7db42d574d62d25892fd89c622c9576e79fe767a4833f9600036a
 
 name:           graphql-extensible-records
 version:        0.1.1.0
@@ -29,7 +29,6 @@ library
   exposed-modules:
       Language.GraphQL.Extensible
       Language.GraphQL.Extensible.Class
-      Language.GraphQL.Extensible.QuerySchemaArgs
       Language.GraphQL.Extensible.TH
   other-modules:
       Paths_graphql_extensible_records

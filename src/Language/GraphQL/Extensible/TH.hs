@@ -41,13 +41,28 @@ import           Data.Aeson.Types               ( Options
                                                 )
 
 
+
+--------------------------------------------------------------------------------
+--- | instanceForHasSchemaInfo
+--------------------------------------------------------------------------------
+instanceForHasSchemaInfo :: Exp -> Name -> Q Dec
+instanceForHasSchemaInfo sch arg =
+    instanceD (cxt []) (appT (conT ''HasSchemaInfo) (conT arg)) [termIns]
+  where
+    termIns :: DecQ
+    termIns =
+        funD
+            (mkName "schemaInfo")
+            [ clause [pure WildP] (pure (NormalB sch)) []
+            ]
+
 --------------------------------------------------------------------------------
 --- | buildTypes
 --------------------------------------------------------------------------------
 -- | Construct type declarations for any query args, response, and any types
 --   required from the schema
-buildTypes :: String -> [String] -> Q [Dec]
-buildTypes schemaFilePath queryFilePaths = do
+buildTypes :: Exp -> String -> [String] -> Q [Dec]
+buildTypes schemaType schemaFilePath queryFilePaths = do
   absolutePaths <- mapM (runIO . makeAbsolute) (schemaFilePath : queryFilePaths)
   mapM_ addDependentFile absolutePaths
   schemaText <- runIO $ T.readFile schemaFilePath
@@ -66,7 +81,7 @@ buildTypes schemaFilePath queryFilePaths = do
       Right decs -> nub <$> (sequence . concat $ decs)
 
   queryTypes <- sequence $ concatMap errorOnLeft $ sequence $ mapM
-    (buildQueryDecs typeSystemDef)
+    (buildQueryDecs schemaType typeSystemDef)
     execDocs
 
   pure $ standaloneTypeDecs <> queryTypes
@@ -205,10 +220,11 @@ buildEnumDecs sd (GQL.ExecutableDocument eds) = do
 
 -- | Constructs type declarations for the query args and response types as well as instances for the types. Does not include dependent types such as enums.
 buildQueryDecs
-  :: [GQL.TypeSystemDefinition]
+  :: Exp
+  -> [GQL.TypeSystemDefinition]
   -> (Text, GQL.ExecutableDocument)
   -> Either Text [DecQ]
-buildQueryDecs schemaDoc (queryText', GQL.ExecutableDocument eds) = do
+buildQueryDecs schemaType schemaDoc (queryText', GQL.ExecutableDocument eds) = do
   rootOpName <- getRootOperationName schemaDoc eds
   case eds of
     [GQL.ExecutableDefinitionOperation opd] -> do
@@ -216,7 +232,7 @@ buildQueryDecs schemaDoc (queryText', GQL.ExecutableDocument eds) = do
                                                          rootOpName
                                                          opd
       argInputTypes <- buildArgInputTypeDecs schemaDoc opd
-      margDecs <- buildArgTypeDecs schemaDoc opd
+      margDecs <- buildArgTypeDecs schemaType schemaDoc opd
       let
         (argName, argDecs) = fromMaybe (''Void, []) margDecs
         gqlInstance        = instanceD
@@ -276,10 +292,11 @@ getRootOperationName sd eds = case GQL.partitionExDefs eds of
     "getRootOperationName: Only single `TypedOperationDefinition` supported."
 
 buildArgTypeDecs
-  :: [GQL.TypeSystemDefinition]
+  :: Exp
+  -> [GQL.TypeSystemDefinition]
   -> GQL.OperationDefinition
   -> Either Text (Maybe (Name, [DecQ]))
-buildArgTypeDecs sd od = case od of
+buildArgTypeDecs sch sd od = case od of
   GQL.OperationDefinitionTyped tod -> case GQL._todName tod of
     Nothing           -> Right Nothing
     Just (GQL.Name n) -> do
@@ -290,7 +307,8 @@ buildArgTypeDecs sd od = case od of
           records <- buildArgRecords sd varDefs
           let
             typeDef = mkNewtypeForRecords queryName records
-          Right $ Just (queryName, [typeDef])
+            hasSchemaInfoInsD = instanceForHasSchemaInfo sch queryName
+          Right $ Just (queryName, [typeDef, hasSchemaInfoInsD])
   _ -> Right Nothing
 
 buildArgInputTypeDecs
