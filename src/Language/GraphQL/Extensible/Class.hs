@@ -1,4 +1,4 @@
-{-# language DeriveLift #-}
+{-# language DeriveLift, DataKinds, GADTs #-}
 module Language.GraphQL.Extensible.Class where
 
 import Data.Proxy (Proxy)
@@ -9,7 +9,7 @@ import Language.Haskell.TH.Syntax (Lift(..))
 class GraphQLQuery args response | response -> args where
     queryText :: Proxy response -> Text
 
-data Schema = Admin | Standard
+data Schema = Admin | Standard | Api
     deriving (Show, Eq, Lift)
 
 --- | This tells us on what postgres/graphql schema does make sense to run
