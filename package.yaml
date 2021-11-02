@@ -30,6 +30,7 @@ dependencies:
   - graphql-parser
   - file-embed
   - directory
+  - extra
 
 library:
   source-dirs: src

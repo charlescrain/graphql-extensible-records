@@ -39,7 +39,7 @@ import           Data.Aeson.Types               ( Options
                                                   ( constructorTagModifier
                                                   )
                                                 )
-
+import Data.List.Extra (nubOrd)
 
 
 --------------------------------------------------------------------------------
@@ -78,9 +78,9 @@ buildTypes schemaType schemaFilePath queryFilePaths = do
   standaloneTypeDecs <-
     case mapM (buildEnumDecs typeSystemDef . snd) execDocs of
       Left  err  -> error $ T.unpack err
-      Right decs -> nub <$> (sequence . concat $ decs)
+      Right decs -> nubOrd <$> (sequence . concat $ decs)
 
-  queryTypes <- sequence $ concatMap errorOnLeft $ sequence $ mapM
+  queryTypes <- fmap nubOrd . sequence $ concatMap errorOnLeft $ sequence $ mapM
     (buildQueryDecs schemaType typeSystemDef)
     execDocs
 

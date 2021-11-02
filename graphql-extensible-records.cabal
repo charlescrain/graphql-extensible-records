@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 468c33bbb5d7db42d574d62d25892fd89c622c9576e79fe767a4833f9600036a
+-- hash: f932eaf13f9eb56f843bf6e36e2b906eb0a60b1d918f7b0e9975fcc19c714a14
 
 name:           graphql-extensible-records
 version:        0.1.1.0
@@ -78,6 +78,7 @@ library
     , base >=4.7 && <5
     , directory
     , extensible >=0.7.1
+    , extra
     , file-embed
     , graphql-parser
     , template-haskell
@@ -139,6 +140,7 @@ test-suite graphql-extensible-records-test
     , base >=4.7 && <5
     , directory
     , extensible >=0.7.1
+    , extra
     , file-embed
     , graphql-extensible-records
     , graphql-parser
