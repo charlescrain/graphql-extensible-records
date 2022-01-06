@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: f932eaf13f9eb56f843bf6e36e2b906eb0a60b1d918f7b0e9975fcc19c714a14
+-- hash: 3500fd4ca745ffc24d48cb280efcd002bcf8534828574b89b779b4ed74c3fc27
 
 name:           graphql-extensible-records
-version:        0.1.1.0
+version:        0.2.0.0
 description:    Please see the README on GitHub at <https://github.com/charlescrain/graphql-extensible-records#readme>
 homepage:       https://github.com/charlescrain/graphql-extensible-records#readme
 bug-reports:    https://github.com/charlescrain/graphql-extensible-records/issues
