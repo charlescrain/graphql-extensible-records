@@ -9,7 +9,7 @@ import Language.Haskell.TH.Syntax (Lift(..))
 class GraphQLQuery args response | response -> args where
     queryText :: Proxy response -> Text
 
-data Schema = Admin | Standard | Api
+data Schema = PixuraAdmin | PixuraStandard | PixuraApi | Superrare
     deriving (Show, Eq, Lift)
 
 --- | This tells us on what postgres/graphql schema does make sense to run
