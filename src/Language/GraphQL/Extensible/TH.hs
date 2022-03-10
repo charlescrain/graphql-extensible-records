@@ -10,10 +10,7 @@ import Data.Aeson (
  )
 import Data.Char (toUpper)
 import Data.Extensible (Record)
-import Data.List (
-    find,
-    nub,
- )
+import Data.List (find)
 import Data.Maybe (
     catMaybes,
     fromMaybe,
@@ -115,7 +112,7 @@ buildEnumDecs sd (GQL.ExecutableDocument eds) = do
     selEnums <- forM selSets (findEnumNameFromSelectionSet rootType)
     todEnums <- forM tods (findEnumNameFromTypedOperationDefinition rootType)
     fragEnums <- forM frags findEnumNameFromFragmentDefinition
-    let enums = nub $ concat $ selEnums <> todEnums <> fragEnums
+    let enums = nubOrd $ concat $ selEnums <> todEnums <> fragEnums
     mkEnumDefs enums
   where
     findEnumNameFromSelectionSet td =
